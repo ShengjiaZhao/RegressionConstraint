@@ -25,9 +25,9 @@ class CreditDataset(Dataset):
         for i in df.columns:
             df[i].fillna(df[i].mean(), inplace=True)
         if train:
-            df = df.iloc[:80000]
+            df = df.iloc[:-10000]
         else:
-            df = df.iloc[80000:]
+            df = df.iloc[-10000:]
         self.data_x = df.drop("y", axis=1).to_numpy()
         self.data_y = np.reshape(df["y"].to_numpy(), [-1, 1])
     

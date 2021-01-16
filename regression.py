@@ -79,7 +79,7 @@ for runs in range(args.num_run):
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=200, gamma=0.9) 
     # train_bb_iter = itertools.cycle(train_bb_loader)
 
-    for epoch in range(5000):
+    for epoch in range(args.num_epoch):
         train_l2_all = []
         for i, data in enumerate(train_loader):
             # Minimize L2
@@ -129,7 +129,7 @@ for runs in range(args.num_run):
 #             test_bias_err, test_cons_err = make_plot(model, test_dataset[:], args, ('test-%d' % epoch) + '-%s.png',
 #                                                     do_plot=(epoch % 100 == 0), alpha=alpha)
             # train_calib_err, _ = eval_calibration(model, test_dataset[:], args)
-            test_bias_y, _ = eval_bias(model, bb, args)
+            test_bias_y, _ = eval_bias(model, test_dataset[:], args)
             test_bias_f, _ = eval_bias(model, test_dataset[:], args, axis='prediction')
             test_calib_err, _ = eval_calibration(model, test_dataset[:], args)
 
