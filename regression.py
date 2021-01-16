@@ -36,13 +36,14 @@ parser.add_argument('--learning_rate', type=float, default=1e-3)
 parser.add_argument('--batch_size', type=int, default=1024)
 parser.add_argument('--two_sided', action='store_true')
 parser.add_argument('--fp_to_fn_ratio', type=float, default=1.0)
+parser.add_argument('--num_run', type=int, default=10)
 args = parser.parse_args()
 device = torch.device('cuda:%d' % args.gpu)
 args.device = device
 
 args.start_time = time.time()
 
-while True:
+for runs in args.num_run:
     while True:
         args.log_dir = os.path.join(args.log_root, '%s-model=%s-%r/%r/%r/%r-twoside=%r-bs=%d-fptofn=%.2f-run=%d' % \
             (args.dataset, args.model, args.train_bias_y, args.train_bias_f, args.train_cons, 
