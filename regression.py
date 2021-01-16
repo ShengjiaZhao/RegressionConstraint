@@ -150,5 +150,5 @@ for runs in range(args.num_run):
         log_writer.flush()
 
         if epoch % 100 == 0:
-            print('epoch %d, global_iteration %d, %s' % (epoch, global_iteration, args.name))
+            print('epoch %d, global_iteration %d, time %.2f, %s' % (epoch, global_iteration, time.time() - start_time, args.name))
         scheduler.step()
