@@ -45,7 +45,7 @@ args.start_time = time.time()
 
 for runs in range(args.num_run):
     while True:
-        args.name = '%s-model=%s-%r/%r/%r/%r-twoside=%r-bs=%d-fptofn=%.2f-run=%d' % \
+        args.name = '%s/model=%s-%r-%r-%r-%r-twoside=%r-bs=%d-fptofn=%.2f-run=%d' % \
             (args.dataset, args.model, args.train_bias_y, args.train_bias_f, args.train_cons, 
              args.train_calib, args.two_sided, args.batch_size, args.fp_to_fn_ratio, args.run_label)
         args.log_dir = os.path.join(args.log_root, args.name)
