@@ -41,7 +41,7 @@ args = parser.parse_args()
 device = torch.device('cuda:%d' % args.gpu)
 args.device = device
 
-args.start_time = time.time()
+start_time = time.time()
 
 for runs in range(args.num_run):
     while True:
