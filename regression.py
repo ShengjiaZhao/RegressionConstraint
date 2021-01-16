@@ -43,7 +43,7 @@ args.device = device
 
 args.start_time = time.time()
 
-for runs in args.num_run:
+for runs in range(args.num_run):
     while True:
         args.log_dir = os.path.join(args.log_root, '%s-model=%s-%r/%r/%r/%r-twoside=%r-bs=%d-fptofn=%.2f-run=%d' % \
             (args.dataset, args.model, args.train_bias_y, args.train_bias_f, args.train_cons, 
