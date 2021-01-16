@@ -45,9 +45,10 @@ args.start_time = time.time()
 
 for runs in range(args.num_run):
     while True:
-        args.log_dir = os.path.join(args.log_root, '%s-model=%s-%r/%r/%r/%r-twoside=%r-bs=%d-fptofn=%.2f-run=%d' % \
+        args.name = '%s-model=%s-%r/%r/%r/%r-twoside=%r-bs=%d-fptofn=%.2f-run=%d' % \
             (args.dataset, args.model, args.train_bias_y, args.train_bias_f, args.train_cons, 
-             args.train_calib, args.two_sided, args.batch_size, args.fp_to_fn_ratio, args.run_label))
+             args.train_calib, args.two_sided, args.batch_size, args.fp_to_fn_ratio, args.run_label)
+        args.log_dir = os.path.join(args.log_root, args.name)
         if not os.path.isdir(args.log_dir):
             os.makedirs(args.log_dir)
             break
@@ -149,5 +150,5 @@ for runs in range(args.num_run):
         log_writer.flush()
 
         if epoch % 100 == 0:
-            print('epoch %d, global_iteration %d' % (epoch, global_iteration))
+            print('epoch %d, global_iteration %d, %s' % (epoch, global_iteration, args.name))
         scheduler.step()
