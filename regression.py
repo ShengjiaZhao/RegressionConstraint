@@ -21,21 +21,23 @@ from models import *
 import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument('--log_root', type=str, default='/data/unbiased/log5')
-parser.add_argument('--gpu', type=int, default=0)
 parser.add_argument('--dataset', type=str, default='crime')
+
 parser.add_argument('--train_bias_y', action='store_true')
 parser.add_argument('--train_bias_f', action='store_true')
 parser.add_argument('--train_cons', action='store_true')
 parser.add_argument('--train_calib', action='store_true')
-parser.add_argument('--num_epoch', type=int, default=500)
 
+# Modeling parameters
 parser.add_argument('--model', type=str, default='bigg')
-parser.add_argument('--num_bins', type=int, default=20)
-parser.add_argument('--run_label', type=int, default=0)
 parser.add_argument('--learning_rate', type=float, default=1e-3)
 parser.add_argument('--batch_size', type=int, default=1024)
-parser.add_argument('--two_sided', action='store_true')
-parser.add_argument('--fp_to_fn_ratio', type=float, default=1.0)
+parser.add_argument('--num_bins', type=int, default=20)
+
+# Run related parameters
+parser.add_argument('--gpu', type=int, default=0)
+parser.add_argument('--num_epoch', type=int, default=500)
+parser.add_argument('--run_label', type=int, default=0)
 parser.add_argument('--num_run', type=int, default=10)
 args = parser.parse_args()
 device = torch.device('cuda:%d' % args.gpu)
@@ -45,9 +47,9 @@ start_time = time.time()
 
 for runs in range(args.num_run):
     while True:
-        args.name = '%s/model=%s-%r-%r-%r-%r-twoside=%r-bs=%d-fptofn=%.2f-run=%d' % \
+        args.name = '%s/model=%s-%r-%r-%r-%r-bs=%d-run=%d' % \
             (args.dataset, args.model, args.train_bias_y, args.train_bias_f, args.train_cons, 
-             args.train_calib, args.two_sided, args.batch_size, args.fp_to_fn_ratio, args.run_label)
+             args.train_calib, args.batch_size, args.run_label)
         args.log_dir = os.path.join(args.log_root, args.name)
         if not os.path.isdir(args.log_dir):
             os.makedirs(args.log_dir)
@@ -79,6 +81,9 @@ for runs in range(args.num_run):
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=200, gamma=0.9) 
     # train_bb_iter = itertools.cycle(train_bb_loader)
 
+    bb = iter(train_bb_loader).next()
+    bb_counter = 0   # Only refresh bb every 100 steps to save computation
+    
     for epoch in range(args.num_epoch):
         train_l2_all = []
         for i, data in enumerate(train_loader):
@@ -91,7 +96,7 @@ for runs in range(args.num_run):
             
             # Minimize any of the special objectives
             optimizer.zero_grad()
-            bb = iter(train_bb_loader).next()
+            
             if args.train_bias_y:
                 loss_bias, _ = eval_bias(model, bb, args)
                 writer.add_scalar('bias_loss_y', loss_bias, global_iteration)
@@ -114,7 +119,12 @@ for runs in range(args.num_run):
             optimizer.step()
             
             global_iteration += 1
-        
+            
+            bb_counter += 1
+            if bb_counter > 100:
+                bb = iter(train_bb_loader).next()
+                bb_counter = 0
+                
         # Performance evaluation
         with torch.no_grad():
             # Log the train and test l2
