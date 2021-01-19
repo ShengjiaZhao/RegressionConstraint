@@ -13,7 +13,7 @@ import os, sys, shutil, copy, time
 from torch.utils.data import Dataset, DataLoader
 
 class CrimeDataset(Dataset):
-    def __init__(self, train=True):
+    def __init__(self, train=True, seed=0):   # seed determines the train/test split. Should be the same for train/test
         super(CrimeDataset, self).__init__()
         
         attrib = pd.read_csv(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data/attributes.csv'), delim_whitespace = True)
@@ -25,7 +25,13 @@ class CrimeDataset(Dataset):
         data = data.replace('?', np.nan)
         data = data.dropna(axis=1)
         data_torch = torch.from_numpy(data.to_numpy()).type(torch.float32)
+        
+        # Set random seed and restore original state 
+        state = torch.random.get_rng_state() 
+        torch.random.manual_seed(seed)
         data_torch = data_torch[torch.randperm(data_torch.shape[0])]
+        torch.set_rng_state(state)
+        
         data_x = data_torch[:, :99]
         data_y = data_torch[:, 99]
         

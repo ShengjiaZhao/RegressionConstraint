@@ -69,8 +69,8 @@ for runs in range(args.num_run):
 
     # Define dataset and dataset loader
     Dataset = dataset_list[args.dataset]
-    train_dataset = Dataset(train=True)
-    test_dataset = Dataset(train=False)
+    train_dataset = Dataset(train=True, seed=args.run_label)
+    test_dataset = Dataset(train=False, seed=args.run_label)
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=2)
     test_loader = DataLoader(test_dataset, batch_size=128, shuffle=False, num_workers=2)
     train_bb_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
@@ -78,7 +78,7 @@ for runs in range(args.num_run):
     # Define model and optimizer
     model = model_list[args.model](train_dataset.x_dim).to(device)
     optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=200, gamma=0.9) 
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.num_epoch // 20, gamma=0.9) 
     # train_bb_iter = itertools.cycle(train_bb_loader)
 
     bb = iter(train_bb_loader).next()
