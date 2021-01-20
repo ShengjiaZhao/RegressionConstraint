@@ -205,6 +205,17 @@ def eval_l2(model, data, args):
     loss = (outputs - labels).pow(2)
     return loss
 
+
+def eval_SmoothL1Loss(model, data, args):
+    inputs, labels = data
+    inputs = inputs.to(args.device)
+    labels = labels.to(args.device)
+
+    outputs = model(inputs)
+    loss = torch.nn.SmoothL1Loss(reduction="none")(outputs.reshape(-1), labels.reshape(-1))
+    return loss
+
+
 def make_plot(model, data, args, file_name='train', do_plot=True, alpha=0.5):
     err_total_bias, errs_bias = eval_bias(model, data, args)
     err_total_cons, errs_cons = eval_cons(model, data, args, alpha=alpha)
