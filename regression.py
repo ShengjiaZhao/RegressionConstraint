@@ -103,12 +103,12 @@ for runs in range(args.num_run):
             optimizer.zero_grad()
             
             if args.train_bias_y:
-                loss_bias, _ = eval_bias(model, bb, args, axis='label', k=args.knn)
+                loss_bias, _ = eval_bias(model, bb, args, axis='label')
                 writer.add_scalar('bias_loss_y', loss_bias, global_iteration)
                 loss_bias.backward()
                 
             if args.train_bias_f:
-                loss_bias, _ = eval_bias(model, bb, args, axis='prediction', k=args.knn)
+                loss_bias, _ = eval_bias(model, bb, args, axis='prediction')
                 writer.add_scalar('bias_loss_f', loss_bias, global_iteration)
                 loss_bias.backward()                
 
@@ -144,8 +144,8 @@ for runs in range(args.num_run):
 #             test_bias_err, test_cons_err = make_plot(model, test_dataset[:], args, ('test-%d' % epoch) + '-%s.png',
 #                                                     do_plot=(epoch % 100 == 0), alpha=alpha)
             # train_calib_err, _ = eval_calibration(model, test_dataset[:], args)
-            test_bias_y, _ = eval_bias(model, test_dataset[:], args, axis='label', k=args.knn)
-            test_bias_f, _ = eval_bias(model, test_dataset[:], args, axis='prediction', k=args.knn)
+            test_bias_y, _ = eval_bias(model, test_dataset[:], args, axis='label')
+            test_bias_f, _ = eval_bias(model, test_dataset[:], args, axis='prediction')
             test_calib_err, _ = eval_calibration(model, test_dataset[:], args)
 
 #             log_scalar('train_bias_loss', train_bias_err, global_iteration)

@@ -93,7 +93,8 @@ def eval_bias(model, data, args, axis='label'):
         errs.append(err)
     return err_total, errs
 
-def eval_bias_knn(model, data, args, axis='label', k=100):
+def eval_bias_knn(model, data, args, axis='label'):
+    k = args.knn
     assert k % 2 == 0
 
     inputs, labels = data
