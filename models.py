@@ -93,6 +93,29 @@ def eval_bias(model, data, args, axis='label'):
         errs.append(err)
     return err_total, errs
 
+def eval_bias_knn(model, data, args, axis='label', k=100):
+    assert k % 2 == 0
+
+    inputs, labels = data
+    inputs = inputs.to(args.device)
+    labels = labels.to(args.device).flatten()
+    outputs = model(inputs).flatten()
+
+    if axis == 'label':
+        ranking = torch.argsort(labels)
+    else:
+        assert axis == 'prediction'
+        ranking = torch.argsort(outputs)
+
+    sorted_labels = labels[ranking]
+    sorted_outputs = outputs[ranking]
+
+    smoothed_outputs = F.conv1d(sorted_outputs.view(1, 1, -1), 
+                                weight=(1./ (k+1) * torch.ones(1, 1, k+1, device=args.device, requires_grad=False))).flatten()
+    smoothed_labels = F.conv1d(sorted_labels.view(1, 1, -1), 
+                               weight=(1./ (k+1) * torch.ones(1, 1, k+1, device=args.device, requires_grad=False))).flatten()
+    loss_bias = smoothed_labels - smoothed_outputs
+    return loss_bias.pow(2).mean(), loss_bias
 
 def eval_cons(model, data, args, axis='label', alpha=0.5):
     inputs, labels = data

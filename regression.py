@@ -32,7 +32,8 @@ parser.add_argument('--train_calib', action='store_true')
 parser.add_argument('--model', type=str, default='bigg')
 parser.add_argument('--learning_rate', type=float, default=1e-3)
 parser.add_argument('--batch_size', type=int, default=1024)
-parser.add_argument('--num_bins', type=int, default=20)
+parser.add_argument('--num_bins', type=int, default=0)
+parser.add_argument('--knn', type=int, default=100)
 
 # Run related parameters
 parser.add_argument('--gpu', type=int, default=0)
@@ -45,11 +46,15 @@ args.device = device
 
 start_time = time.time()
 
+if args.num_bins == 0:
+    eval_bias = eval_bias_knn
+    assert args.knn > 10 and args.knn % 2 == 0
+    
 for runs in range(args.num_run):
     while True:
-        args.name = '%s/model=%s-%r-%r-%r-%r-bs=%d-run=%d' % \
+        args.name = '%s/model=%s-%r-%r-%r-%r-bs=%d-bin=%d-%d-run=%d' % \
             (args.dataset, args.model, args.train_bias_y, args.train_bias_f, args.train_cons, 
-             args.train_calib, args.batch_size, args.run_label)
+             args.train_calib, args.batch_size, args.num_bins, args.knn, args.run_label)
         args.log_dir = os.path.join(args.log_root, args.name)
         if not os.path.isdir(args.log_dir):
             os.makedirs(args.log_dir)
@@ -98,12 +103,12 @@ for runs in range(args.num_run):
             optimizer.zero_grad()
             
             if args.train_bias_y:
-                loss_bias, _ = eval_bias(model, bb, args)
+                loss_bias, _ = eval_bias(model, bb, args, axis='label', k=args.knn)
                 writer.add_scalar('bias_loss_y', loss_bias, global_iteration)
                 loss_bias.backward()
                 
             if args.train_bias_f:
-                loss_bias, _ = eval_bias(model, bb, args, axis='prediction')
+                loss_bias, _ = eval_bias(model, bb, args, axis='prediction', k=args.knn)
                 writer.add_scalar('bias_loss_f', loss_bias, global_iteration)
                 loss_bias.backward()                
 
@@ -139,8 +144,8 @@ for runs in range(args.num_run):
 #             test_bias_err, test_cons_err = make_plot(model, test_dataset[:], args, ('test-%d' % epoch) + '-%s.png',
 #                                                     do_plot=(epoch % 100 == 0), alpha=alpha)
             # train_calib_err, _ = eval_calibration(model, test_dataset[:], args)
-            test_bias_y, _ = eval_bias(model, test_dataset[:], args)
-            test_bias_f, _ = eval_bias(model, test_dataset[:], args, axis='prediction')
+            test_bias_y, _ = eval_bias(model, test_dataset[:], args, axis='label', k=args.knn)
+            test_bias_f, _ = eval_bias(model, test_dataset[:], args, axis='prediction', k=args.knn)
             test_calib_err, _ = eval_calibration(model, test_dataset[:], args)
 
 #             log_scalar('train_bias_loss', train_bias_err, global_iteration)
