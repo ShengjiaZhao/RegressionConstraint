@@ -93,7 +93,8 @@ def eval_bias(model, data, args, axis='label'):
         errs.append(err)
     return err_total, errs
 
-def eval_bias_knn(model, data, args, axis='label', k=100):
+def eval_bias_knn(model, data, args, axis='label'):
+    k = args.knn
     assert k % 2 == 0
 
     inputs, labels = data
@@ -111,9 +112,11 @@ def eval_bias_knn(model, data, args, axis='label', k=100):
     sorted_outputs = outputs[ranking]
 
     smoothed_outputs = F.conv1d(sorted_outputs.view(1, 1, -1), 
-                                weight=(1./ (k+1) * torch.ones(1, 1, k+1, device=args.device, requires_grad=False))).flatten()
+                                weight=(1./ (k+1) * torch.ones(1, 1, k+1, device=args.device, requires_grad=False)),
+                                padding=k // 2).flatten()
     smoothed_labels = F.conv1d(sorted_labels.view(1, 1, -1), 
-                               weight=(1./ (k+1) * torch.ones(1, 1, k+1, device=args.device, requires_grad=False))).flatten()
+                               weight=(1./ (k+1) * torch.ones(1, 1, k+1, device=args.device, requires_grad=False)),
+                               padding=k // 2).flatten()
     loss_bias = smoothed_labels - smoothed_outputs
     return loss_bias.pow(2).mean(), loss_bias
 
