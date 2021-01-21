@@ -26,6 +26,8 @@ class CreditDataset(Dataset):
             df[i].fillna(df[i].mean(), inplace=True)
         if split == 'train':
             df = df.iloc[:-20000]
+        elif split == 'train_val':
+            df = df.iloc[:-10000]
         elif split == 'val':
             df = df.iloc[-20000:-10000]
         else:
