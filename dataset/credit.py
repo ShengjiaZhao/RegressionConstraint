@@ -13,7 +13,7 @@ import os, sys, shutil, copy, time
 from torch.utils.data import Dataset, DataLoader
 
 class CreditDataset(Dataset):
-    def __init__(self, train=True, normalize=True):
+    def __init__(self, split='train', normalize=True, seed=0):
         super(CreditDataset, self).__init__()
         df = pd.concat([pd.read_csv(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data/CreditScore_train.csv')), 
                         pd.read_csv(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data/CreditScore_test.csv'))])
@@ -24,9 +24,12 @@ class CreditDataset(Dataset):
 
         for i in df.columns:
             df[i].fillna(df[i].mean(), inplace=True)
-        if train:
-            df = df.iloc[:-10000]
+        if split == 'train':
+            df = df.iloc[:-20000]
+        elif split == 'val':
+            df = df.iloc[-20000:-10000]
         else:
+            assert split == 'test'
             df = df.iloc[-10000:]
         self.data_x = df.drop("y", axis=1).to_numpy()
         self.data_y = np.reshape(df["y"].to_numpy(), [-1, 1])
