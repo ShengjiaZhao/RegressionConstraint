@@ -76,8 +76,12 @@ for runs in range(args.num_run):
 
     # Define dataset and dataset loader
     Dataset = dataset_list[args.dataset]
-    train_dataset = Dataset(train=True, seed=args.run_label)
-    test_dataset = Dataset(train=False, seed=args.run_label)
+    if args.re_calib or args.re_bias_f:
+        train_dataset = Dataset(split='train', seed=args.run_label)
+        val_dataset = Dataset(split='val', seed=args.run_label)
+    else:
+        train_dataset = Dataset(split='train_val', seed=args.run_label)
+    test_dataset = Dataset(split='test', seed=args.run_label)
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=2)
     test_loader = DataLoader(test_dataset, batch_size=128, shuffle=False, num_workers=2)
     train_bb_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
