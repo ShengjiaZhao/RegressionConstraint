@@ -54,9 +54,10 @@ if args.num_bins == 0:
     
 for runs in range(args.num_run):
     while True:
-        args.name = '%s/model=%s-%r-%r-%r-%r-bs=%d-bin=%d-%d-run=%d' % \
-            (args.dataset, args.model, args.train_bias_y, args.train_bias_f, args.train_cons, 
-             args.train_calib, args.batch_size, args.num_bins, args.knn, args.run_label)
+        args.name = '%s/model=%s-%r-%r-%r-%r-%r-%r-bs=%d-bin=%d-%d-run=%d' % \
+            (args.dataset, args.model, 
+             args.train_bias_y, args.train_bias_f, args.train_cons, args.train_calib, args.re_calib, args.re_bias_f,
+             args.batch_size, args.num_bins, args.knn, args.run_label)
         args.log_dir = os.path.join(args.log_root, args.name)
         if not os.path.isdir(args.log_dir):
             os.makedirs(args.log_dir)
