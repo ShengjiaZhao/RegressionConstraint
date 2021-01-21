@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 import os, sys, shutil, copy, time, random
 from dataset import *
 from models import *
-
+from utils import *
 
 import argparse
 parser = argparse.ArgumentParser()
@@ -27,6 +27,8 @@ parser.add_argument('--train_bias_y', action='store_true')
 parser.add_argument('--train_bias_f', action='store_true')
 parser.add_argument('--train_cons', action='store_true')
 parser.add_argument('--train_calib', action='store_true')
+parser.add_argument('--re_calib', action='store_true')
+parser.add_argument('--re_bias_f', action='store_true')
 
 # Modeling parameters
 parser.add_argument('--model', type=str, default='bigg')
@@ -90,6 +92,7 @@ for runs in range(args.num_run):
     bb_counter = 0   # Only refresh bb every 100 steps to save computation
     
     for epoch in range(args.num_epoch):
+        model.train()
         train_l2_all = []
         for i, data in enumerate(train_loader):
             # Minimize L2
@@ -130,7 +133,11 @@ for runs in range(args.num_run):
                 bb = iter(train_bb_loader).next()
                 bb_counter = 0
                 
+        if args.re_calib:
+            model.recalibrator = Recalibrator(model, val_dataset[:], args)
+
         # Performance evaluation
+        model.eval()
         with torch.no_grad():
             # Log the train and test l2
             train_l2_all = torch.cat(train_l2_all).mean()

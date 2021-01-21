@@ -13,7 +13,7 @@ import os, sys, shutil, copy, time
 from torch.utils.data import Dataset, DataLoader
 
 class CrimeDataset(Dataset):
-    def __init__(self, train=True, seed=0):   # seed determines the train/test split. Should be the same for train/test
+    def __init__(self, split='train', seed=0):   # seed determines the train/test split. Should be the same for train/test
         super(CrimeDataset, self).__init__()
         
         attrib = pd.read_csv(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data/attributes.csv'), delim_whitespace = True)
@@ -37,12 +37,19 @@ class CrimeDataset(Dataset):
         
         # Normalize data_y
         data_y = (torch.argsort(torch.argsort(data_y)).type(torch.float) / data_y.shape[0]).view(-1, 1)
-        if train:
+        if split == 'train':
+            self.data_x = data_x[:1200]
+            self.data_y = data_y[:1200]
+        elif split == 'train_val':
             self.data_x = data_x[:1500]
             self.data_y = data_y[:1500]
-        else:
+        elif split == 'test':
             self.data_x = data_x[1500:]
             self.data_y = data_y[1500:]
+        else:
+            assert split == 'val'
+            self.data_x = data_x[1200:1500]
+            self.data_y = data_y[1200:1500]
         
         self.x_dim = 99
         
