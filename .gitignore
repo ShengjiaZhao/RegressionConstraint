@@ -1,9 +1,9 @@
-runs/
+runs/*
 __pycache__/
 */__pycache__/
 runner.sh
 sustain_dataset/gdp_data/
-sustain_dataset/*/*.pkl
+sustain_dataset/*/*.pth
 dataset/data
 
 
