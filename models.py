@@ -17,7 +17,8 @@ class ModelLinear(nn.Module):
     def __init__(self, x_dim, out_dim=1):
         super(ModelLinear, self).__init__()
         self.fc1 = nn.Linear(x_dim, out_dim, bias=True)
-    
+        self.recalibrator = None 
+        
     def forward(self, x):
         out = self.fc1(x)
         if not self.training and self.recalibrator is not None:
@@ -29,6 +30,7 @@ class ModelSmall(nn.Module):
         super(ModelSmall, self).__init__()
         self.fc1 = nn.Linear(x_dim, 5000)
         self.fc2 = nn.Linear(5000, out_dim)
+        self.recalibrator = None 
     
     def forward(self, x):
         x = F.relu(self.fc1(x))
@@ -43,6 +45,7 @@ class ModelBig(nn.Module):
         self.fc1 = nn.Linear(x_dim, 100)
         self.fc2 = nn.Linear(100, 100)
         self.fc3 = nn.Linear(100, out_dim)
+        self.recalibrator = None 
     
     def forward(self, x):
         x = F.relu(self.fc1(x))
