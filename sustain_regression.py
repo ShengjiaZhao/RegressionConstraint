@@ -33,8 +33,8 @@ parser.add_argument('--train_calib', action='store_true')
 parser.add_argument('--model', type=str, default="bigg")
 parser.add_argument('--batch_size', type=int, default=1024)
 parser.add_argument('--learning_rate', type=float, default=1e-3)
-parser.add_argument('--num_bins', type=int, default=20)
-
+parser.add_argument('--num_bins', type=int, default=0)
+parser.add_argument('--knn', type=int, default=100)
 
 parser.add_argument('--num_epoch', type=int, default=500)
 parser.add_argument('--num_run', type=int, default=10)
@@ -47,10 +47,16 @@ device = torch.device('cuda:%d' % args.gpu)
 args.device = device
 start_time = time.time()
 
+knn = ''
+if args.num_bins == 0:
+    eval_bias = eval_bias_knn
+    assert args.knn > 10 and args.knn % 2 == 0
+    knn = '_knn'
+
 for runs in range(args.num_run):
     while True:
-        args.name = '%s/model=%s-%r-%r-%r-%r-bs=%d-run=%d' % \
-                    (args.dataset, args.model, args.train_bias_y, args.train_bias_f, args.train_cons,
+        args.name = '%s%s/model=%s-%r-%r-%r-%r-bs=%d-run=%d' % \
+                    (args.dataset, knn, args.model, args.train_bias_y, args.train_bias_f, args.train_cons,
                      args.train_calib, args.batch_size, args.run_label)
         args.log_dir = os.path.join(args.log_root, args.name)
         if not os.path.isdir(args.log_dir):
@@ -64,7 +70,6 @@ for runs in range(args.num_run):
     global_iteration = 0
     random.seed(args.run_label)  # Set a different random seed for different run labels
     torch.manual_seed(args.run_label)
-
 
     def log_scalar(name, value, epoch):
         writer.add_scalar(name, value, epoch)

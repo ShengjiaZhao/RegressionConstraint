@@ -39,19 +39,20 @@ parser.add_argument('--run_label', type=int, default=0)
 
 # parser.add_argument('--doc', type=str, default="2009-11_uganda")
 
-def tax_utility(difference, beta=0.5):
+def tax_utility(difference, beta=1.):
     # difference: y_0 - pred
     return beta * difference
 
 
-def compute_utility(model, test_dataset, r=torch.log, y_0=0.3):
+def compute_utility(model, test_dataset, a=torch.relu, r=torch.log, y_0=0.3):
     inputs, labels = test_dataset[:]
     inputs, labels = inputs.to(device), labels.to(device)
     pred = model(inputs).reshape(-1)
     labels = labels.reshape(-1)
-    finacial_aid = torch.relu(y_0 - pred)
+    finacial_aid = a(y_0 - pred)
     after_finacial_aid = labels + finacial_aid
-    utility = r(2.+after_finacial_aid)
+    # utility = r(2.+after_finacial_aid) # worked well
+    utility = r(3.+after_finacial_aid)
     utility = utility.mean(dim=0)
     return utility
 
@@ -71,14 +72,14 @@ if __name__ == '__main__':
     device = torch.device('cuda:%d' % args.gpu)
     args.device = device
     start_time = time.time()
-    run_labels = range(3)
+    run_labels = range(0, 10, 1)
     utility_points = 100
     fig1, ax1 = plt.subplots(nrows=1, ncols=1, figsize=(20, 15))
     colors = plt.cm.get_cmap('Set3').colors
     # colors = ['r', 'g', 'c', 'm', 'k', 'orange', 'r', 'black']
 
     for i, train_bias_y in enumerate([True, False]):
-        for j, train_bias_f in enumerate([False]):
+        for j, train_bias_f in enumerate([True, False]):
             for k, train_cons in enumerate([True, False]):
                 for t, train_calib in enumerate([True, False]):
 
@@ -87,12 +88,13 @@ if __name__ == '__main__':
 
                     labels_bias = None
                     for run_label in run_labels:
-                        args.name = '%s/model=%s-%r-%r-%r-%r-bs=%d-run=%d' % \
+                        args.name = '%s_knn/model=%s-%r-%r-%r-%r-bs=%d-run=%d' % \
                                     (args.dataset, args.model, train_bias_y, train_bias_f, train_cons,
                                      train_calib, args.batch_size, run_label)
 
                         args.log_dir = os.path.join(args.log_root, args.name)
                         if not os.path.isdir(args.log_dir):
+                            print("dir not exist {}".format(args.name))
                             continue
 
                         ckpt = torch.load(os.path.join(args.log_dir, "ckpt.pth"))
@@ -108,9 +110,9 @@ if __name__ == '__main__':
                             u_array_bias = []
                             labels_bias = []
 
-                            for y0 in np.linspace(-1., 0.5, utility_points):
+                            for y0 in np.linspace(-1.0, 2, utility_points):
                                 u = compute_utility(model, test_dataset, y_0=y0).data.item()
-                                # u = compute_utility(model, test_dataset, r=tax_utility, y_0=y0)  # .data.item()
+                                # u = compute_utility(model, test_dataset, a=tax_utility, y_0=y0)  # .data.item()
                                 #     print(u)
                                 u_array_bias.append(u)
                                 labels_bias.append(y0)
@@ -127,7 +129,7 @@ if __name__ == '__main__':
                                 c=colors[int(j * 8 + i * 4 + k * 2 + t)%12])
 
 
-    ax1.set_ylim([0.6, 1])
+    # ax1.set_ylim([0.6, 1.5])
     # ax1.set_ylim([1., 1.5])
     fontsize = 36
     if args.dataset == "gdp":
@@ -140,7 +142,7 @@ if __name__ == '__main__':
     ax1.set_ylabel(r"$u(\epsilon)$", fontsize=fontsize)
 
     plt.tight_layout()
-    plt.savefig('plots/result_{}.png'.format(args.dataset))
+    plt.savefig('plots/result_{}_knn.png'.format(args.dataset))
 
 
     # plt.xlabel(r"$y_0$", fontsize=16)
