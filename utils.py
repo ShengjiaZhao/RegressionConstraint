@@ -39,13 +39,70 @@ class Recalibrator:
         self.iso = IsotonicRegression(out_of_bounds='clip', increasing=True)
         self.iso = self.iso.fit(outputs, labels)
 
-        
     def adjust(self, original_y):
         original_shape = original_y.shape
         return torch.from_numpy(self.iso.predict(original_y.cpu().flatten())).view(original_shape).to(self.args.device)
     
     
 
+class RecalibratorBias:
+    def __init__(self, model, data, args, axis='label', verbose=False):
+        self.axis = axis
+        self.flow = NafFlow().to(args.device)
+        flow_optim = optim.Adam(self.flow.parameters(), lr=1e-3)
+        
+        k = args.knn
+        assert k % 2 == 0
+        
+        inputs, labels = data
+        inputs = inputs.to(args.device)
+        labels = labels.to(args.device).flatten()
+        
+        for iteration in range(5000):
+            flow_optim.zero_grad()
+            outputs = model(inputs).flatten()
+
+            if axis == 'label':
+                ranking = torch.argsort(labels)
+            else:
+                assert axis == 'prediction'
+                ranking = torch.argsort(outputs)
+
+            sorted_labels = labels[ranking]
+            sorted_outputs = outputs[ranking]
+
+            smoothed_outputs = F.conv1d(sorted_outputs.view(1, 1, -1), 
+                                        weight=(1./ (k+1) * torch.ones(1, 1, k+1, device=args.device, requires_grad=False)),
+                                        padding=k // 2).flatten()
+            smoothed_labels = F.conv1d(sorted_labels.view(1, 1, -1), 
+                                       weight=(1./ (k+1) * torch.ones(1, 1, k+1, device=args.device, requires_grad=False)),
+                                       padding=k // 2).flatten()
+        #     print(smoothed_outputs.shape)
+        #     print(smoothed_labels.shape)
+        #     loss_bias = smoothed_labels - smoothed_outputs
+
+            if axis == 'label':
+                adjusted_labels, _ = self.flow(smoothed_labels.view(-1, 1))
+                adjusted_outputs = self.flow.invert(smoothed_outputs.view(-1, 1))
+                loss_bias = (adjusted_labels.view(-1) - smoothed_outputs).pow(2).mean()
+            elif axis == 'prediction':
+                adjusted_outputs, _ = self.flow(smoothed_outputs.view(-1, 1))
+                loss_bias = (smoothed_labels - adjusted_outputs.view(-1)).pow(2).mean()
+            loss_bias.backward()
+            flow_optim.step()
+            
+            if verbose and iteration % 100 == 0:
+                print("Iteration %d, loss_bias=%.5f" % (iteration, loss_bias))
+    
+    def adjust(self, original_y):
+        original_shape = original_y.shape
+        if self.axis == 'label':
+            adjusted_output = self.flow.invert(original_y.view(-1, 1))
+        else:
+            adjusted_output, _ = self.flow(original_y).view(-1, 1)
+        return adjusted_output.view(original_shape)
+    
+    
 # Input a regression model and a pair of data, output the total error and binned error
 # If axis=label computes the label conditional bias, if axis=prediction computes the prediction conditional bias
 def eval_bias(model, data, args, axis='label'):
@@ -77,6 +134,7 @@ def eval_bias(model, data, args, axis='label'):
         err_total += err.pow(2) * bi.type(torch.float32).mean()
         errs.append(err)
     return err_total, errs
+
 
 def eval_bias_knn(model, data, args, axis='label'):
     k = args.knn
@@ -164,6 +222,7 @@ def eval_calibration(model, data, args):
     
     loss_calib = (labels - outputs).pow(2).mean()
     return loss_calib, None
+
 
 def eval_decisions(model, data, args, thresholds):
     inputs, labels = data
