@@ -76,15 +76,11 @@ for runs in range(args.num_run):
         writer.add_scalar(name, value, epoch)
         log_writer.write('%f ' % value)
 
-    # Define dataset and dataset loader
-#     Dataset = dataset_list[args.dataset]
-#     if args.re_calib or args.re_bias_f:
-#         train_dataset = Dataset(split='train', seed=args.run_label)
-#         val_dataset = Dataset(split='val', seed=args.run_label)
-#     else:
-#         train_dataset = Dataset(split='train_val', seed=args.run_label)
-    train_dataset, test_dataset, _, x_dim, y_dim, _ = get_uci_datasets(args.dataset, split_seed=args.run_label, test_fraction=0.0)
-
+    if args.re_calib or args.re_bias_f:
+        train_dataset, val_dataset, test_dataset, _, x_dim, y_dim, _ = get_uci_datasets(args.dataset, split_seed=args.run_label, val_fraction=0.2, test_fraction=0.2) 
+    else:
+        train_dataset, _, test_dataset, x_dim, y_dim, _ = get_uci_datasets(args.dataset, split_seed=args.run_label, val_fraction=0.0, test_fraction=0.2)
+    
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=2)
     test_loader = DataLoader(test_dataset, batch_size=128, shuffle=False, num_workers=2)
     train_bb_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
