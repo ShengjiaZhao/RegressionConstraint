@@ -17,11 +17,12 @@ import os, sys, shutil, copy, time, random
 from dataset import *
 from models import *
 from utils import *
+from data_loaders import get_uci_datasets
 
 import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument('--log_root', type=str, default='/data/unbiased/log5')
-parser.add_argument('--dataset', type=str, default='crime')
+parser.add_argument('--dataset', type=str, default='crime')   # Available options are crime, naval, 
 
 parser.add_argument('--train_bias_y', action='store_true')
 parser.add_argument('--train_bias_f', action='store_true')
@@ -76,19 +77,20 @@ for runs in range(args.num_run):
         log_writer.write('%f ' % value)
 
     # Define dataset and dataset loader
-    Dataset = dataset_list[args.dataset]
-    if args.re_calib or args.re_bias_f:
-        train_dataset = Dataset(split='train', seed=args.run_label)
-        val_dataset = Dataset(split='val', seed=args.run_label)
-    else:
-        train_dataset = Dataset(split='train_val', seed=args.run_label)
-    test_dataset = Dataset(split='test', seed=args.run_label)
+#     Dataset = dataset_list[args.dataset]
+#     if args.re_calib or args.re_bias_f:
+#         train_dataset = Dataset(split='train', seed=args.run_label)
+#         val_dataset = Dataset(split='val', seed=args.run_label)
+#     else:
+#         train_dataset = Dataset(split='train_val', seed=args.run_label)
+    train_dataset, test_dataset, _, x_dim, y_dim, _ = get_uci_datasets(args.dataset, split_seed=args.run_label, test_fraction=0.0)
+
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=2)
     test_loader = DataLoader(test_dataset, batch_size=128, shuffle=False, num_workers=2)
     train_bb_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
     
     # Define model and optimizer
-    model = model_list[args.model](train_dataset.x_dim).to(device)
+    model = model_list[args.model](x_dim[0]).to(device)
     optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.num_epoch // 20, gamma=0.9) 
     # train_bb_iter = itertools.cycle(train_bb_loader)
@@ -96,7 +98,7 @@ for runs in range(args.num_run):
     bb = iter(train_bb_loader).next()
     bb_counter = 0   # Only refresh bb every 100 steps to save computation
     
-    for epoch in range(args.num_epoch):
+    while global_iteration < 200000:
         model.train()
         train_l2_all = []
         for i, data in enumerate(train_loader):
@@ -176,6 +178,6 @@ for runs in range(args.num_run):
         log_writer.write('\n')
         log_writer.flush()
 
-        if epoch % 100 == 0:
-            print('epoch %d, global_iteration %d, time %.2f, %s' % (epoch, global_iteration, time.time() - start_time, args.name))
+        if global_iteration % 100 == 0:
+            print('Global_iteration %d, time %.2f, %s' % (global_iteration, time.time() - start_time, args.name))
         scheduler.step()
