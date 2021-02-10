@@ -21,7 +21,7 @@ from data_loaders import get_uci_datasets
 
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('--log_root', type=str, default='/data/unbiased/log5')
+parser.add_argument('--log_root', type=str, default='int_log')
 parser.add_argument('--dataset', type=str, default='crime')   # Available options are crime, naval, 
 
 parser.add_argument('--train_bias_y', action='store_true')
@@ -77,7 +77,7 @@ for runs in range(args.num_run):
         writer.add_scalar(name, value, epoch)
         log_writer.write('%f ' % value)
 
-    if args.re_calib or args.re_bias_f or args.re_calib_y:
+    if args.re_calib or args.re_bias_f or args.re_bias_y:
         train_dataset, val_dataset, test_dataset, x_dim, y_dim, _= get_uci_datasets(args.dataset, split_seed=args.run_label, val_fraction=0.2, test_fraction=0.2) 
     else:
         train_dataset, _, test_dataset, x_dim, y_dim, _ = get_uci_datasets(args.dataset, split_seed=args.run_label, val_fraction=0.0, test_fraction=0.2)
@@ -141,9 +141,9 @@ for runs in range(args.num_run):
 
         if args.re_calib:
             model.recalibrator = Recalibrator(model, val_dataset[:], args)
-        if args.re_cailb_y:
+        if args.re_bias_y:
             model.recalibrator = RecalibratorBias(model, val_dataset[:], args, axis='label')
-        if args.re_calib_f:
+        if args.re_bias_f:
             model.recalibrator = RecalibratorBias(model, val_dataset[:], args, axis='prediction')
         # Performance evaluation
         model.eval()
@@ -180,6 +180,6 @@ for runs in range(args.num_run):
         log_writer.write('\n')
         log_writer.flush()
 
-        if epoch % 100 == 0:
-            print('epoch %d, global_iteration %d, time %.2f, %s' % (epoch, global_iteration, time.time() - start_time, args.name))
+        if global_iteration % 1000 == 0:
+            print('global_iteration %d, time %.2f, %s' % (global_iteration, time.time() - start_time, args.name))
         scheduler.step()
