@@ -30,6 +30,7 @@ parser.add_argument('--train_cons', action='store_true')
 parser.add_argument('--train_calib', action='store_true')
 parser.add_argument('--re_calib', action='store_true')
 parser.add_argument('--re_bias_f', action='store_true')
+parser.add_argument('--re_bias_y', action='store_true')
 
 # Modeling parameters
 parser.add_argument('--model', type=str, default='bigg')
@@ -55,9 +56,9 @@ if args.num_bins == 0:
     
 for runs in range(args.num_run):
     while True:
-        args.name = '%s/model=%s-%r-%r-%r-%r-%r-%r-bs=%d-bin=%d-%d-run=%d' % \
+        args.name = '%s/model=%s-%r-%r-%r-%r-%r-%r-%r-bs=%d-bin=%d-%d-run=%d' % \
             (args.dataset, args.model, 
-             args.train_bias_y, args.train_bias_f, args.train_cons, args.train_calib, args.re_calib, args.re_bias_f,
+             args.train_bias_y, args.train_bias_f, args.train_cons, args.train_calib, args.re_calib, args.re_bias_f, args.re_bias_y,
              args.batch_size, args.num_bins, args.knn, args.run_label)
         args.log_dir = os.path.join(args.log_root, args.name)
         if not os.path.isdir(args.log_dir):
@@ -76,14 +77,15 @@ for runs in range(args.num_run):
         writer.add_scalar(name, value, epoch)
         log_writer.write('%f ' % value)
 
-    if args.re_calib or args.re_bias_f:
-        train_dataset, val_dataset, test_dataset, _, x_dim, y_dim, _ = get_uci_datasets(args.dataset, split_seed=args.run_label, val_fraction=0.2, test_fraction=0.2) 
+    if args.re_calib or args.re_bias_f or args.re_calib_y:
+        train_dataset, val_dataset, test_dataset, x_dim, y_dim, _= get_uci_datasets(args.dataset, split_seed=args.run_label, val_fraction=0.2, test_fraction=0.2) 
     else:
         train_dataset, _, test_dataset, x_dim, y_dim, _ = get_uci_datasets(args.dataset, split_seed=args.run_label, val_fraction=0.0, test_fraction=0.2)
-    
+
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=2)
     test_loader = DataLoader(test_dataset, batch_size=128, shuffle=False, num_workers=2)
     train_bb_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
+
     
     # Define model and optimizer
     model = model_list[args.model](x_dim[0]).to(device)
@@ -93,6 +95,7 @@ for runs in range(args.num_run):
 
     bb = iter(train_bb_loader).next()
     bb_counter = 0   # Only refresh bb every 100 steps to save computation
+
     
     while global_iteration < 200000:
         model.train()
@@ -104,15 +107,15 @@ for runs in range(args.num_run):
             train_l2_all.append(loss_l2.detach())
             loss_l2.mean().backward()
             optimizer.step()
-            
+
             # Minimize any of the special objectives
             optimizer.zero_grad()
-            
+
             if args.train_bias_y:
                 loss_bias, _ = eval_bias(model, bb, args, axis='label')
                 writer.add_scalar('bias_loss_y', loss_bias, global_iteration)
                 loss_bias.backward()
-                
+
             if args.train_bias_f:
                 loss_bias, _ = eval_bias(model, bb, args, axis='prediction')
                 writer.add_scalar('bias_loss_f', loss_bias, global_iteration)
@@ -128,17 +131,20 @@ for runs in range(args.num_run):
                 writer.add_scalar('calib_loss', loss_calib, global_iteration)
                 loss_calib.backward()
             optimizer.step()
-            
+
             global_iteration += 1
-            
+
             bb_counter += 1
             if bb_counter > 100:
                 bb = iter(train_bb_loader).next()
                 bb_counter = 0
-                
+
         if args.re_calib:
             model.recalibrator = Recalibrator(model, val_dataset[:], args)
-
+        if args.re_cailb_y:
+            model.recalibrator = RecalibratorBias(model, val_dataset[:], args, axis='label')
+        if args.re_calib_f:
+            model.recalibrator = RecalibratorBias(model, val_dataset[:], args, axis='prediction')
         # Performance evaluation
         model.eval()
         with torch.no_grad():
@@ -148,18 +154,18 @@ for runs in range(args.num_run):
 
             test_l2_all = eval_l2(model, test_dataset[:], args).mean()
             log_scalar('test_l2', test_l2_all.item(), global_iteration)
-        
-#             train_bias_err, train_cons_err = make_plot(model, train_dataset[:], args, ('train-%d' % epoch) + '-%s.png', 
-#                                                        do_plot=(epoch % 100 == 0), alpha=alpha)
-#             test_bias_err, test_cons_err = make_plot(model, test_dataset[:], args, ('test-%d' % epoch) + '-%s.png',
-#                                                     do_plot=(epoch % 100 == 0), alpha=alpha)
+
+    #             train_bias_err, train_cons_err = make_plot(model, train_dataset[:], args, ('train-%d' % epoch) + '-%s.png', 
+    #                                                        do_plot=(epoch % 100 == 0), alpha=alpha)
+    #             test_bias_err, test_cons_err = make_plot(model, test_dataset[:], args, ('test-%d' % epoch) + '-%s.png',
+    #                                                     do_plot=(epoch % 100 == 0), alpha=alpha)
             # train_calib_err, _ = eval_calibration(model, test_dataset[:], args)
             test_bias_y, _ = eval_bias(model, test_dataset[:], args, axis='label')
             test_bias_f, _ = eval_bias(model, test_dataset[:], args, axis='prediction')
             test_calib_err, _ = eval_calibration(model, test_dataset[:], args)
 
-#             log_scalar('train_bias_loss', train_bias_err, global_iteration)
-#             log_scalar('train_cons_loss', train_cons_err, global_iteration)
+    #             log_scalar('train_bias_loss', train_bias_err, global_iteration)
+    #             log_scalar('train_cons_loss', train_cons_err, global_iteration)
             log_scalar('test_bias_y', test_bias_y, global_iteration)
             log_scalar('test_bias_f', test_bias_f, global_iteration)
             log_scalar('test_calib_loss', test_calib_err, global_iteration)
@@ -174,6 +180,6 @@ for runs in range(args.num_run):
         log_writer.write('\n')
         log_writer.flush()
 
-        if global_iteration % 100 == 0:
-            print('Global_iteration %d, time %.2f, %s' % (global_iteration, time.time() - start_time, args.name))
+        if epoch % 100 == 0:
+            print('epoch %d, global_iteration %d, time %.2f, %s' % (epoch, global_iteration, time.time() - start_time, args.name))
         scheduler.step()

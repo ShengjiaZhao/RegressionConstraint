@@ -16,7 +16,7 @@ import torchvision
 from torchvision import datasets, models, transforms
 import matplotlib.pyplot as plt
 import os, sys, shutil, copy, time, random
-
+from models import NafFlow
 
 class Recalibrator:
     def __init__(self, model, data, args):
@@ -99,10 +99,10 @@ class RecalibratorBias:
         if self.axis == 'label':
             adjusted_output = self.flow.invert(original_y.view(-1, 1))
         else:
-            adjusted_output, _ = self.flow(original_y).view(-1, 1)
+            adjusted_output, _ = self.flow(original_y.view(-1, 1))
         return adjusted_output.view(original_shape)
     
-    
+
 # Input a regression model and a pair of data, output the total error and binned error
 # If axis=label computes the label conditional bias, if axis=prediction computes the prediction conditional bias
 def eval_bias(model, data, args, axis='label'):
