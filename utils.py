@@ -42,13 +42,87 @@ class Recalibrator:
     def adjust(self, original_y):
         original_shape = original_y.shape
         return torch.from_numpy(self.iso.predict(original_y.cpu().flatten())).view(original_shape).to(self.args.device)
-    
-    
+
+
+class Recalibrator_flow:
+    def __init__(self, model, flow, args):
+        self.args = args
+        self.model = model  # regression model
+        self.flow = flow # replace IsotonicRegression with 1d flow
+
+    def compute_loss(self, data):
+        inputs, labels = data[0].to(self.args.device), data[1].to(self.args.device)
+        # with torch.no_grad():  # Question: shall we use no_grad()?
+        outputs = self.model(inputs)
+
+        labels = torch.sort(labels.flatten())[0]
+        outputs = torch.sort(outputs.flatten())[0]
+        adjusted_outputs, _ = self.flow(outputs.view(-1, 1))
+        loss_bias = (labels - adjusted_outputs.view(-1)).pow(2).mean()
+        return loss_bias
+
+    def adjust(self, original_y):
+        output = self.flow(original_y.reshape(-1, 1).to(self.args.device))[0]
+        return output.reshape(original_y.shape)
+
+
+class RecalibratorBias_flow:
+    def __init__(self, model, flow, args, axis='label'):
+        self.axis = axis
+        self.args = args
+        self.model = model  # regression model
+        self.flow = flow
+
+        k = args.knn
+        assert k % 2 == 0
+
+    def compute_loss(self, data):
+        k = self.args.knn
+        inputs, labels = data
+        inputs = inputs.to(self.args.device)
+        labels = labels.to(self.args.device).flatten()
+
+        outputs = self.model(inputs).flatten() # Question: shall we use no_grad()?
+        if self.axis == 'label':
+            ranking = torch.argsort(labels)
+        else:
+            assert self.axis == 'prediction'
+            ranking = torch.argsort(outputs)
+
+        sorted_labels = labels[ranking]
+        sorted_outputs = outputs[ranking]
+
+        smoothed_outputs = F.conv1d(sorted_outputs.view(1, 1, -1),
+                                    weight=(1. / (k + 1) * torch.ones(1, 1, k + 1, device=self.args.device,
+                                                                      requires_grad=False)),
+                                    padding=k // 2).flatten()
+        smoothed_labels = F.conv1d(sorted_labels.view(1, 1, -1),
+                                   weight=(1. / (k + 1) * torch.ones(1, 1, k + 1, device=self.args.device,
+                                                                     requires_grad=False)),
+                                   padding=k // 2).flatten()
+
+        if self.axis == 'label':
+            adjusted_labels, _ = self.flow(smoothed_labels.view(-1, 1))
+            # adjusted_outputs = self.flow.invert(smoothed_outputs.view(-1, 1))
+            loss_bias = (adjusted_labels.view(-1) - smoothed_outputs).pow(2).mean()
+        elif self.axis == 'prediction':
+            adjusted_outputs, _ = self.flow(smoothed_outputs.view(-1, 1))
+            loss_bias = (smoothed_labels - adjusted_outputs.view(-1)).pow(2).mean()
+        return loss_bias
+
+    def adjust(self, original_y):
+        original_shape = original_y.shape
+        if self.axis == 'label':
+            adjusted_output = self.flow.invert(original_y.view(-1, 1))
+        else:
+            adjusted_output, _ = self.flow(original_y.view(-1, 1))
+        return adjusted_output.view(original_shape)
+
 
 class RecalibratorBias:
     def __init__(self, model, data, args, axis='label', verbose=False):
         self.axis = axis
-        self.flow = NafFlow().to(args.device)
+        self.flow = NafFlow().to(args.device) # This flow model is too simple, might need more layers and latents?
         flow_optim = optim.Adam(self.flow.parameters(), lr=1e-3)
         
         k = args.knn

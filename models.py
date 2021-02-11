@@ -137,3 +137,24 @@ class NafFlow(nn.Module):
                 return mid
             else:
                 print("no inverse found")
+
+
+class deeper_flow(nn.Module):
+    def __init__(self, layer_num=5, feature_size=20):
+        super(deeper_flow, self).__init__()
+        self.layer_num = layer_num
+        self.feature_size = feature_size
+
+        self.model = nn.ModuleList([NafFlow(feature_size=feature_size) for i in range(layer_num)])
+
+    def forward(self, x):
+        log_det = 0.
+        for layer in self.model:
+            x, log_det_x = layer(x)
+            log_det = log_det + log_det_x
+        return x, log_det
+
+    def invert(self, y):
+        for layer in reversed(self.model):
+            y = layer.invert(y)
+        return y
