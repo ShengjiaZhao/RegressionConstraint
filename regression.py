@@ -93,14 +93,13 @@ for runs in range(args.num_run):
     
     # Define model and optimizer
     model = model_list[args.model](x_dim[0]).to(device)
-    # flow_bias_y = deeper_flow(layer_num=5, feature_size=20).to(device)
-    # flow_bias_f = deeper_flow(layer_num=5, feature_size=20).to(device)
-    # flow_calib = deeper_flow(layer_num=5, feature_size=20).to(device)
-    flow = deeper_flow(layer_num=5, feature_size=20).to(device) # one joint flow
-
     optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.num_epoch // 20, gamma=0.9)
 
+    # flow_bias_y = deeper_flow(layer_num=5, feature_size=20).to(device)
+    # flow_bias_f = deeper_flow(layer_num=5, feature_size=20).to(device)
+    # flow_calib = deeper_flow(layer_num=5, feature_size=20).to(device)
+    flow = deeper_flow(layer_num=5, feature_size=20).to(device)  # one joint flow
     # flow_optimizer = optim.Adam(itertools.chain(flow_bias_y.parameters(), flow_bias_f.parameters(), flow_calib.parameters()),
     #                             lr=args.learning_rate) # shall we train flows and regression model jointly and share the optimizers?
     flow_optimizer = optim.Adam(flow.parameters(), lr=args.learning_rate)
@@ -216,3 +215,4 @@ for runs in range(args.num_run):
         if global_iteration % 1000 == 0:
             print('global_iteration %d, time %.2f, %s' % (global_iteration, time.time() - start_time, args.name))
         scheduler.step()
+        flow_scheduler.step()
