@@ -78,6 +78,67 @@ class Recalibrator:
         original_shape = original_y.shape
         adjusted_output, _ = self.flow(original_y.view(-1, 1))
         return adjusted_output.view(original_shape)
+
+class RecalibratorOnline:
+    def __init__(self, model, args, re_calib=False, re_bias_f=False, re_bias_y=False, verbose=False):
+        self.args = args
+        self.model = model  # regression model        
+        self.flow = NafFlow(feature_size=40).to(args.device) # This flow model is too simple, might need more layers and latents?
+        self.flow_optim = optim.Adam(self.flow.parameters(), lr=1e-3)
+        self.re_calib = re_calib
+        self.re_bias_f = re_bias_f 
+        self.re_bias_y = re_bias_y
+    
+        assert self.args.knn % 2 == 0
+        assert re_calib or re_bias_f or re_bias_y 
+        
+    def train_step(self, data):
+        k = self.args.knn
+        inputs, labels = data
+        inputs = inputs.to(args.device)
+        labels = labels.to(args.device).flatten()
+        
+        self.flow_optim.zero_grad()
+        loss_all = 0.0
+        outputs = self.model(inputs).flatten()
+
+        for objective in range(2):
+            if objective == 0 and self.re_bias_f:
+                ranking = torch.argsort(outputs)
+            else:
+                continue
+            if objective == 1 and self.re_bias_y:
+                ranking = torch.argsort(labels)
+            else:
+                continue
+            sorted_labels = labels[ranking]
+            sorted_outputs = outputs[ranking]
+
+            smoothed_outputs = F.conv1d(sorted_outputs.view(1, 1, -1), 
+                                        weight=(1./ (k+1) * torch.ones(1, 1, k+1, device=args.device, requires_grad=False)),
+                                        padding=k // 2).flatten()
+            smoothed_labels = F.conv1d(sorted_labels.view(1, 1, -1), 
+                                       weight=(1./ (k+1) * torch.ones(1, 1, k+1, device=args.device, requires_grad=False)),
+                                       padding=k // 2).flatten()
+            adjusted_outputs, _ = self.flow(smoothed_outputs.view(-1, 1))
+            loss_bias = (smoothed_labels - adjusted_outputs.view(-1)).pow(2).mean()
+            loss_all += loss_bias 
+
+        if self.re_calib:
+            labels = torch.sort(labels.flatten())[0]
+            outputs = torch.sort(outputs.flatten())[0]
+            adjusted_outputs, _ = self.flow(outputs.view(-1, 1))
+            loss_bias = (labels - adjusted_outputs.view(-1)).pow(2).mean()
+            loss_all += loss_bias
+
+        loss_all.backward()
+        self.flow_optim.step()
+        return loss_all
+            
+    def adjust(self, original_y):
+        original_shape = original_y.shape
+        adjusted_output, _ = self.flow(original_y.view(-1, 1))
+        return adjusted_output.view(original_shape)
     
 
 class Recalibrator_flow:
