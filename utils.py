@@ -20,19 +20,21 @@ from models import NafFlow
 
 
 class Recalibrator:
+    # This class is untested 
     def __init__(self, model, data, args, re_calib=False, re_bias_f=False, re_bias_y=False, verbose=False):
         self.args = args
         self.model = model  # regression model        
         self.flow = NafFlow(feature_size=40).to(args.device) # This flow model is too simple, might need more layers and latents?
         flow_optim = optim.Adam(self.flow.parameters(), lr=1e-3)
+        flow_scheduler = torch.optim.lr_scheduler.StepLR(flow_optim, step_size=20, gamma=0.9)
         
         k = args.knn
         assert k % 2 == 0
         assert re_calib or re_bias_f or re_bias_y 
         
         inputs, labels = data
-        inputs = inputs.to(args.device)
-        labels = labels.to(args.device).flatten()
+        inputs = inputs.to(self.args.device)
+        labels = labels.to(self.args.device).flatten()
         
         for iteration in range(5000):
             flow_optim.zero_grad()
@@ -40,11 +42,9 @@ class Recalibrator:
             outputs = model(inputs).flatten()
             
             for objective in range(2):
-                if objective == 0 and re_bias_f:
+                if objective == 0 and self.re_bias_f:
                     ranking = torch.argsort(outputs)
-                else:
-                    continue
-                if objective == 1 and re_bias_y:
+                elif objective == 1 and self.re_bias_y:
                     ranking = torch.argsort(labels)
                 else:
                     continue
@@ -70,7 +70,7 @@ class Recalibrator:
 
             loss_all.backward()
             flow_optim.step()
-            
+            flow_scheduler.step()
             if verbose and iteration % 100 == 0:
                 print("Iteration %d, loss_bias=%.5f" % (iteration, loss_bias))
     
@@ -85,6 +85,7 @@ class RecalibratorOnline:
         self.model = model  # regression model        
         self.flow = NafFlow(feature_size=40).to(args.device) # This flow model is too simple, might need more layers and latents?
         self.flow_optim = optim.Adam(self.flow.parameters(), lr=1e-3)
+        self.flow_scheduler = torch.optim.lr_scheduler.StepLR(self.flow_optim, step_size=args.num_iter // (args.flow_skip * 20), gamma=0.9)
         self.re_calib = re_calib
         self.re_bias_f = re_bias_f 
         self.re_bias_y = re_bias_y
@@ -95,8 +96,8 @@ class RecalibratorOnline:
     def train_step(self, data):
         k = self.args.knn
         inputs, labels = data
-        inputs = inputs.to(args.device)
-        labels = labels.to(args.device).flatten()
+        inputs = inputs.to(self.args.device)
+        labels = labels.to(self.args.device).flatten()
         
         self.flow_optim.zero_grad()
         loss_all = 0.0
@@ -105,9 +106,7 @@ class RecalibratorOnline:
         for objective in range(2):
             if objective == 0 and self.re_bias_f:
                 ranking = torch.argsort(outputs)
-            else:
-                continue
-            if objective == 1 and self.re_bias_y:
+            elif objective == 1 and self.re_bias_y:
                 ranking = torch.argsort(labels)
             else:
                 continue
@@ -115,10 +114,10 @@ class RecalibratorOnline:
             sorted_outputs = outputs[ranking]
 
             smoothed_outputs = F.conv1d(sorted_outputs.view(1, 1, -1), 
-                                        weight=(1./ (k+1) * torch.ones(1, 1, k+1, device=args.device, requires_grad=False)),
+                                        weight=(1./ (k+1) * torch.ones(1, 1, k+1, device=self.args.device, requires_grad=False)),
                                         padding=k // 2).flatten()
             smoothed_labels = F.conv1d(sorted_labels.view(1, 1, -1), 
-                                       weight=(1./ (k+1) * torch.ones(1, 1, k+1, device=args.device, requires_grad=False)),
+                                       weight=(1./ (k+1) * torch.ones(1, 1, k+1, device=self.args.device, requires_grad=False)),
                                        padding=k // 2).flatten()
             adjusted_outputs, _ = self.flow(smoothed_outputs.view(-1, 1))
             loss_bias = (smoothed_labels - adjusted_outputs.view(-1)).pow(2).mean()
@@ -130,9 +129,10 @@ class RecalibratorOnline:
             adjusted_outputs, _ = self.flow(outputs.view(-1, 1))
             loss_bias = (labels - adjusted_outputs.view(-1)).pow(2).mean()
             loss_all += loss_bias
-
+        
         loss_all.backward()
         self.flow_optim.step()
+        self.flow_scheduler.step()
         return loss_all
             
     def adjust(self, original_y):
