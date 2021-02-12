@@ -16,7 +16,8 @@ from torch.utils.data import Dataset, DataLoader
 import pdb
 
 class GDP_Dataset(Dataset):
-    def __init__(self, train=True, normalize=False, random_permute=True, permutation=None, doc="sustain_dataset/gdp_data/CHN_no2_train.pkl", partition=0.3):
+    def __init__(self, train=True, val=False, normalize=False, random_permute=True, permutation=None, doc="sustain_dataset/gdp_data/CHN_no2_train.pkl", val_partition=0.,
+                 partition=0.3):
         super(GDP_Dataset, self).__init__()
         pd_data = pd.read_pickle(doc)
 
@@ -50,7 +51,8 @@ class GDP_Dataset(Dataset):
         else:
             data_y = data_y.view(-1, 1)
 
-        partition = int((1 - partition) * data_x.shape[0])
+        partition = int((1 - val_partition - partition) * data_x.shape[0]) # now train partition
+        val_num = int(val_partition * data_x.shape[0])
         self.mean = torch.mean(data_x[:partition], dim=0, keepdim=True)
         self.std = torch.std(data_x[:partition], dim=0, keepdim=True)
 
@@ -61,9 +63,12 @@ class GDP_Dataset(Dataset):
         if train:
             self.data_x = data_x[:partition]
             self.data_y = data_y[:partition]
+        elif val:
+            self.data_x = data_x[partition:partition+val_num]
+            self.data_y = data_y[partition:partition+val_num]
         else:
-            self.data_x = data_x[partition:]
-            self.data_y = data_y[partition:]
+            self.data_x = data_x[partition+val_num:]
+            self.data_y = data_y[partition+val_num:]
 
         # self.data_x = data_x
         # self.data_y = data_y

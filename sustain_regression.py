@@ -17,7 +17,7 @@ import os, sys, shutil, copy, time, random
 
 from sustain_dataset import *
 from models import *
-# from utils import *
+from utils import *
 
 import argparse
 parser = argparse.ArgumentParser()
@@ -29,13 +29,18 @@ parser.add_argument('--train_bias_y', action='store_true')
 parser.add_argument('--train_bias_f', action='store_true')
 parser.add_argument('--train_cons', action='store_true')
 parser.add_argument('--train_calib', action='store_true')
+parser.add_argument('--re_calib', action='store_true')
+parser.add_argument('--re_bias_f', action='store_true')
+parser.add_argument('--re_bias_y', action='store_true')
 
+# Modeling parameters
 parser.add_argument('--model', type=str, default="bigg")
 parser.add_argument('--batch_size', type=int, default=1024)
 parser.add_argument('--learning_rate', type=float, default=1e-3)
 parser.add_argument('--num_bins', type=int, default=0)
 parser.add_argument('--knn', type=int, default=100)
 
+# Run related parameters
 parser.add_argument('--num_epoch', type=int, default=500)
 parser.add_argument('--num_run', type=int, default=10)
 parser.add_argument('--run_label', type=int, default=0)
@@ -55,9 +60,14 @@ if args.num_bins == 0:
 
 for runs in range(args.num_run):
     while True:
-        args.name = '%s%s/model=%s-%r-%r-%r-%r-bs=%d-run=%d' % \
-                    (args.dataset, knn, args.model, args.train_bias_y, args.train_bias_f, args.train_cons,
-                     args.train_calib, args.batch_size, args.run_label)
+        # args.name = '%s%s/new_model=%s-%r-%r-%r-%r-bs=%d-run=%d' % \
+        #             (args.dataset, knn, args.model, args.train_bias_y, args.train_bias_f, args.train_cons,
+        #              args.train_calib, args.batch_size, args.run_label)
+        args.name = '%s%s/model=%s-%r-%r-%r-%r-%r-%r-%r-bs=%d-bin=%d-%d-run=%d' % \
+                    (args.dataset, knn, args.model,
+                     args.train_bias_y, args.train_bias_f, args.train_cons, args.train_calib, args.re_calib,
+                     args.re_bias_f, args.re_bias_y,
+                     args.batch_size, args.num_bins, args.knn, args.run_label)
         args.log_dir = os.path.join(args.log_root, args.name)
         if not os.path.isdir(args.log_dir):
             os.makedirs(args.log_dir)
@@ -80,8 +90,13 @@ for runs in range(args.num_run):
     total_data = Dataset().total_data
     permutation = torch.randperm(total_data)
 
-    train_dataset = Dataset(train=True, random_permute=False, permutation=permutation)
-    test_dataset = Dataset(train=False, random_permute=False, permutation=permutation) # could have overlapping
+    if args.re_calib or args.re_bias_y or args.re_bias_f:
+        train_dataset = Dataset(train=True, val=False, random_permute=False, val_partition=0.2, permutation=permutation)
+        val_dataset = Dataset(train=False, val=True, random_permute=False, val_partition=0.2, permutation=permutation)
+        test_dataset = Dataset(train=False, val=False, random_permute=False, val_partition=0.2, permutation=permutation)
+    else:
+        train_dataset = Dataset(train=True, random_permute=False, permutation=permutation)
+        test_dataset = Dataset(train=False, random_permute=False, permutation=permutation) # could have overlapping
 
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=2)
     test_loader = DataLoader(test_dataset, batch_size=128, shuffle=False, num_workers=2)
@@ -91,10 +106,23 @@ for runs in range(args.num_run):
     model = model_list[args.model](train_dataset.x_dim).to(device)
     optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=200, gamma=0.9)
+
+    # flow_bias_y = deeper_flow(layer_num=5, feature_size=20).to(device)
+    # flow_bias_f = deeper_flow(layer_num=5, feature_size=20).to(device)
+    # flow_calib = deeper_flow(layer_num=5, feature_size=20).to(device)
+    flow = deeper_flow(layer_num=5, feature_size=20).to(device)  # one joint flow
+    # flow_optimizer = optim.Adam(itertools.chain(flow_bias_y.parameters(), flow_bias_f.parameters(), flow_calib.parameters()),
+    #                             lr=args.learning_rate) # shall we train flows and regression model jointly and share the optimizers?
+    flow_optimizer = optim.Adam(flow.parameters(), lr=args.learning_rate)
+    flow_scheduler = torch.optim.lr_scheduler.StepLR(flow_optimizer, step_size=args.num_epoch // 20, gamma=0.9)
+
     # train_bb_iter = itertools.cycle(train_bb_loader)
 
     bb = iter(train_bb_loader).next()
     bb_counter = 0  # Only refresh bb every 100 steps to save computation
+
+    # TODO: update val dataste
+    val_dataset = train_dataset
 
     for epoch in range(args.num_epoch):
         train_l2_all = []
@@ -132,6 +160,30 @@ for runs in range(args.num_run):
                 loss_calib.backward()
             optimizer.step()
 
+            # Optimize re-tuning
+            extra_flow_loss = 0.
+            flow_optimizer.zero_grad()
+            if args.re_calib:  # model, flow, args
+                # model.recalibrator = Recalibrator_flow(model, flow_calib, args)
+                model.recalibrator = Recalibrator_flow(model, flow, args)
+                loss_ = model.recalibrator.compute_loss(val_dataset[:])  # averaged scalar
+                extra_flow_loss = extra_flow_loss + loss_
+
+            if args.re_bias_y:
+                # model.recalibrator = RecalibratorBias_flow(model, flow_bias_y, args, axis='label')
+                model.recalibrator = RecalibratorBias_flow(model, flow, args, axis='label')
+                loss_ = model.recalibrator.compute_loss(val_dataset[:])
+                extra_flow_loss = extra_flow_loss + loss_
+            if args.re_bias_f:
+                # model.recalibrator = RecalibratorBias_flow(model, flow_bias_f, args, axis='prediction')
+                model.recalibrator = RecalibratorBias_flow(model, flow, args, axis='prediction')
+                loss_ = model.recalibrator.compute_loss(val_dataset[:])
+                extra_flow_loss = extra_flow_loss + loss_
+
+            if args.re_calib or args.re_bias_y or args.re_bias_f:
+                extra_flow_loss.backward()
+                flow_optimizer.step()
+
             global_iteration += 1
 
             bb_counter += 1
@@ -140,6 +192,7 @@ for runs in range(args.num_run):
                 bb_counter = 0
 
         # Performance evaluation
+        model.eval()
         with torch.no_grad():
             # Log the train and test l2
             train_l2_all = torch.cat(train_l2_all).mean()
@@ -177,12 +230,14 @@ for runs in range(args.num_run):
             print('epoch %d, global_iteration %d, time %.2f, %s' % (
             epoch, global_iteration, time.time() - start_time, args.name))
         scheduler.step()
+        flow_scheduler.step()
 
         states = [
             model.state_dict(),
             train_dataset,
             test_dataset,
             epoch,
+            flow.state_dict(),
         ]
         torch.save(states, os.path.join(args.log_dir, 'ckpt.pth'))
 
