@@ -90,8 +90,13 @@ for runs in range(args.num_run):
     total_data = Dataset().total_data
     permutation = torch.randperm(total_data)
 
-    train_dataset = Dataset(train=True, random_permute=False, permutation=permutation)
-    test_dataset = Dataset(train=False, random_permute=False, permutation=permutation) # could have overlapping
+    if args.re_calib or args.re_bias_y or args.re_bias_f:
+        train_dataset = Dataset(train=True, val=False, random_permute=False, val_partition=0.2, permutation=permutation)
+        val_dataset = Dataset(train=False, val=True, random_permute=False, val_partition=0.2, permutation=permutation)
+        test_dataset = Dataset(train=False, val=False, random_permute=False, val_partition=0.2, permutation=permutation)
+    else:
+        train_dataset = Dataset(train=True, random_permute=False, permutation=permutation)
+        test_dataset = Dataset(train=False, random_permute=False, permutation=permutation) # could have overlapping
 
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=2)
     test_loader = DataLoader(test_dataset, batch_size=128, shuffle=False, num_workers=2)
@@ -232,6 +237,7 @@ for runs in range(args.num_run):
             train_dataset,
             test_dataset,
             epoch,
+            flow.state_dict(),
         ]
         torch.save(states, os.path.join(args.log_dir, 'ckpt.pth'))
 
