@@ -95,8 +95,8 @@ for runs in range(args.num_run):
 
     bb = iter(train_bb_loader).next()
     bb_counter = 0   # Only refresh bb every 100 steps to save computation
-
     
+    prev_iteration = 0
     while global_iteration < 200000:
         model.train()
         train_l2_all = []
@@ -138,48 +138,52 @@ for runs in range(args.num_run):
             if bb_counter > 100:
                 bb = iter(train_bb_loader).next()
                 bb_counter = 0
+        
+        if global_iteration - prev_iteration > 20000:
+            prev_iteration = global_iteration
+            
+            if args.re_calib:
+                model.recalibrator = Recalibrator(model, val_dataset[:], args)
+            if args.re_bias_y:
+                model.recalibrator = RecalibratorBias(model, val_dataset[:], args, axis='label')
+            if args.re_bias_f:
+                model.recalibrator = RecalibratorBias(model, val_dataset[:], args, axis='prediction')
+            # Performance evaluation
+            model.eval()
+            with torch.no_grad():
+                # Log the train and test l2
+                train_l2_all = torch.cat(train_l2_all).mean()
+                log_scalar('train_l2', train_l2_all.item(), global_iteration)
 
-        if args.re_calib:
-            model.recalibrator = Recalibrator(model, val_dataset[:], args)
-        if args.re_bias_y:
-            model.recalibrator = RecalibratorBias(model, val_dataset[:], args, axis='label')
-        if args.re_bias_f:
-            model.recalibrator = RecalibratorBias(model, val_dataset[:], args, axis='prediction')
-        # Performance evaluation
-        model.eval()
-        with torch.no_grad():
-            # Log the train and test l2
-            train_l2_all = torch.cat(train_l2_all).mean()
-            log_scalar('train_l2', train_l2_all.item(), global_iteration)
+                test_l2_all = eval_l2(model, test_dataset[:], args).mean()
+                log_scalar('test_l2', test_l2_all.item(), global_iteration)
 
-            test_l2_all = eval_l2(model, test_dataset[:], args).mean()
-            log_scalar('test_l2', test_l2_all.item(), global_iteration)
+        #             train_bias_err, train_cons_err = make_plot(model, train_dataset[:], args, ('train-%d' % epoch) + '-%s.png', 
+        #                                                        do_plot=(epoch % 100 == 0), alpha=alpha)
+        #             test_bias_err, test_cons_err = make_plot(model, test_dataset[:], args, ('test-%d' % epoch) + '-%s.png',
+        #                                                     do_plot=(epoch % 100 == 0), alpha=alpha)
+                # train_calib_err, _ = eval_calibration(model, test_dataset[:], args)
+                test_bias_y, _ = eval_bias(model, test_dataset[:], args, axis='label')
+                test_bias_f, _ = eval_bias(model, test_dataset[:], args, axis='prediction')
+                test_calib_err, _ = eval_calibration(model, test_dataset[:], args)
 
-    #             train_bias_err, train_cons_err = make_plot(model, train_dataset[:], args, ('train-%d' % epoch) + '-%s.png', 
-    #                                                        do_plot=(epoch % 100 == 0), alpha=alpha)
-    #             test_bias_err, test_cons_err = make_plot(model, test_dataset[:], args, ('test-%d' % epoch) + '-%s.png',
-    #                                                     do_plot=(epoch % 100 == 0), alpha=alpha)
-            # train_calib_err, _ = eval_calibration(model, test_dataset[:], args)
-            test_bias_y, _ = eval_bias(model, test_dataset[:], args, axis='label')
-            test_bias_f, _ = eval_bias(model, test_dataset[:], args, axis='prediction')
-            test_calib_err, _ = eval_calibration(model, test_dataset[:], args)
+        #             log_scalar('train_bias_loss', train_bias_err, global_iteration)
+        #             log_scalar('train_cons_loss', train_cons_err, global_iteration)
+                log_scalar('test_bias_y', test_bias_y, global_iteration)
+                log_scalar('test_bias_f', test_bias_f, global_iteration)
+                log_scalar('test_calib_loss', test_calib_err, global_iteration)
 
-    #             log_scalar('train_bias_loss', train_bias_err, global_iteration)
-    #             log_scalar('train_cons_loss', train_cons_err, global_iteration)
-            log_scalar('test_bias_y', test_bias_y, global_iteration)
-            log_scalar('test_bias_f', test_bias_f, global_iteration)
-            log_scalar('test_calib_loss', test_calib_err, global_iteration)
+                thresholds = torch.linspace(0.1, 0.9, 8).to(device)
+                fn, fp = eval_decisions(model, test_dataset[:], args, thresholds)
+                for ti in range(8):
+                    log_scalar('fn_%d' % ti, fn[ti], global_iteration)
+                    log_scalar('fp_%d' % ti, fp[ti], global_iteration)
+                log_scalar('fp+fn_all', fn.mean() + fp.mean(), global_iteration)
 
-            thresholds = torch.linspace(0.1, 0.9, 8).to(device)
-            fn, fp = eval_decisions(model, test_dataset[:], args, thresholds)
-            for ti in range(8):
-                log_scalar('fn_%d' % ti, fn[ti], global_iteration)
-                log_scalar('fp_%d' % ti, fp[ti], global_iteration)
-            log_scalar('fp+fn_all', fn.mean() + fp.mean(), global_iteration)
+            log_writer.write('\n')
+            log_writer.flush()
 
-        log_writer.write('\n')
-        log_writer.flush()
-
-        if global_iteration % 1000 == 0:
-            print('global_iteration %d, time %.2f, %s' % (global_iteration, time.time() - start_time, args.name))
-        scheduler.step()
+            if global_iteration % 1000 == 0:
+                print('global_iteration %d, time %.2f, %s' % (global_iteration, time.time() - start_time, args.name))
+            scheduler.step()
+       
