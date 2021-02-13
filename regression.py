@@ -162,13 +162,13 @@ for runs in range(args.num_run):
             if model.recalibrator is not None and global_iteration % args.flow_skip == 0:
                 model.recalibrator.train_step(val_dataset[:])
 
-        states = [
-            model.state_dict(),
-            train_dataset,
-            test_dataset,
-            epoch,
-        ]
-        torch.save(states, os.path.join(args.log_dir, 'ckpt.pth'))
+        # states = [
+        #     model.state_dict(),
+        #     train_dataset,
+        #     test_dataset,
+        #     epoch,
+        # ]
+        # torch.save(states, os.path.join(args.log_dir, 'ckpt.pth'))
 
         # Performance evaluation
         model.eval()
