@@ -16,7 +16,7 @@ import torchvision
 from torchvision import datasets, models, transforms
 import matplotlib.pyplot as plt
 import os, sys, shutil, copy, time, random
-from models import NafFlow
+from models import NafFlow, deeper_flow
 
 class Recalibrator:
     def __init__(self, model, data, args):
@@ -122,6 +122,7 @@ class RecalibratorBias_flow:
 class RecalibratorBias:
     def __init__(self, model, data, args, axis='label', verbose=False):
         self.axis = axis
+#         self.flow = deeper_flow(layer_num=5, feature_size=20).to(args.device) 
         self.flow = NafFlow().to(args.device) # This flow model is too simple, might need more layers and latents?
         flow_optim = optim.Adam(self.flow.parameters(), lr=1e-3)
         
@@ -157,7 +158,7 @@ class RecalibratorBias:
 
             if axis == 'label':
                 adjusted_labels, _ = self.flow(smoothed_labels.view(-1, 1))
-                adjusted_outputs = self.flow.invert(smoothed_outputs.view(-1, 1))
+#                 adjusted_outputs = self.flow.invert(smoothed_outputs.view(-1, 1))
                 loss_bias = (adjusted_labels.view(-1) - smoothed_outputs).pow(2).mean()
             elif axis == 'prediction':
                 adjusted_outputs, _ = self.flow(smoothed_outputs.view(-1, 1))

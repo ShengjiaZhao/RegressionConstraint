@@ -177,6 +177,14 @@ for runs in range(args.num_run):
                 bb = iter(train_bb_loader).next()
                 bb_counter = 0
 
+        states = [
+            model.state_dict(),
+            train_dataset,
+            test_dataset,
+            epoch,
+        ]
+        torch.save(states, os.path.join(args.log_dir, 'ckpt.pth'))
+
         # Performance evaluation
         model.eval()
         with torch.no_grad():
