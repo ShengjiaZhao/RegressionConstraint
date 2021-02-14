@@ -110,7 +110,7 @@ for runs in range(args.num_run):
     # flow_bias_y = deeper_flow(layer_num=5, feature_size=20).to(device)
     # flow_bias_f = deeper_flow(layer_num=5, feature_size=20).to(device)
     # flow_calib = deeper_flow(layer_num=5, feature_size=20).to(device)
-    flow = deeper_flow(layer_num=5, feature_size=20).to(device)  # one joint flow
+    flow = deeper_flow(layer_num=1, feature_size=20).to(device)  # one joint flow
     # flow_optimizer = optim.Adam(itertools.chain(flow_bias_y.parameters(), flow_bias_f.parameters(), flow_calib.parameters()),
     #                             lr=args.learning_rate) # shall we train flows and regression model jointly and share the optimizers?
     flow_optimizer = optim.Adam(flow.parameters(), lr=args.learning_rate)
