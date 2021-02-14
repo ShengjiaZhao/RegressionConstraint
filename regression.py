@@ -83,14 +83,17 @@ for runs in range(args.num_run):
         writer.add_scalar(name, value, epoch)
         log_writer.write('%f ' % value)
 
+    train_dataset, _, test_dataset, x_dim, y_dim, _ = get_uci_datasets(args.dataset, split_seed=args.run_label, val_fraction=0.0, test_fraction=0.2)
     if args.re_calib or args.re_bias_f or args.re_bias_y:
-        train_dataset, val_dataset, test_dataset, x_dim, y_dim, _= get_uci_datasets(args.dataset, split_seed=args.run_label, val_fraction=0.2, test_fraction=0.2) 
-    else:
-        train_dataset, _, test_dataset, x_dim, y_dim, _ = get_uci_datasets(args.dataset, split_seed=args.run_label, val_fraction=0.0, test_fraction=0.2)
-
+        if len(train_dataset) > 10000:
+            val_fraction = 2000. / len(train_dataset)
+        else:
+            val_fraction = 0.2
+        train_dataset, val_dataset, test_dataset, x_dim, y_dim, _= get_uci_datasets(args.dataset, split_seed=args.run_label, val_fraction=val_fraction, test_fraction=0.2) 
+    
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=1)
     test_loader = DataLoader(test_dataset, batch_size=128, shuffle=False, num_workers=1)
-    train_bb_loader = DataLoader(train_dataset, batch_size=args.bbatch_size, shuffle=True, num_workers=4)
+    # train_bb_loader = DataLoader(train_dataset, batch_size=args.bbatch_size, shuffle=True, num_workers=4)
 
     
     # Define model and optimizer
@@ -101,20 +104,20 @@ for runs in range(args.num_run):
     # flow_bias_y = deeper_flow(layer_num=5, feature_size=20).to(device)
     # flow_bias_f = deeper_flow(layer_num=5, feature_size=20).to(device)
     # flow_calib = deeper_flow(layer_num=5, feature_size=20).to(device)
-    flow = deeper_flow(layer_num=5, feature_size=20).to(device)  # one joint flow
-    # flow_optimizer = optim.Adam(itertools.chain(flow_bias_y.parameters(), flow_bias_f.parameters(), flow_calib.parameters()),
-    #                             lr=args.learning_rate) # shall we train flows and regression model jointly and share the optimizers?
-    flow_optimizer = optim.Adam(flow.parameters(), lr=args.learning_rate)
-    flow_scheduler = torch.optim.lr_scheduler.StepLR(flow_optimizer, step_size=args.num_iter // 20, gamma=0.9)
+#     flow = deeper_flow(layer_num=5, feature_size=20).to(device)  # one joint flow
+#     # flow_optimizer = optim.Adam(itertools.chain(flow_bias_y.parameters(), flow_bias_f.parameters(), flow_calib.parameters()),
+#     #                             lr=args.learning_rate) # shall we train flows and regression model jointly and share the optimizers?
+#     flow_optimizer = optim.Adam(flow.parameters(), lr=args.learning_rate)
+#     flow_scheduler = torch.optim.lr_scheduler.StepLR(flow_optimizer, step_size=args.num_iter // 20, gamma=0.9)
 
     if args.re_calib or args.re_bias_f or args.re_bias_y:
         model.recalibrator = RecalibratorOnline(model, args, re_calib=args.re_calib, re_bias_f=args.re_bias_f, re_bias_y=args.re_bias_y)
     # train_bb_iter = itertools.cycle(train_bb_loader)
 
-    bb = iter(train_bb_loader).next()
-    bb_counter = 0   # Only refresh bb every 100 steps to save computation
+#     bb = iter(train_bb_loader).next()
+#     bb_counter = 0   # Only refresh bb every 100 steps to save computation
     
-    prev_iteration = 0
+    # prev_iteration = 0
     while global_iteration < args.num_iter:
         model.train()
         train_l2_all = []
@@ -153,10 +156,10 @@ for runs in range(args.num_run):
                 optimizer.step()
             scheduler.step()
             global_iteration += 1
-            bb_counter += 1
-            if bb_counter > 100:
-                bb = iter(train_bb_loader).next()
-                bb_counter = 0
+#             bb_counter += 1
+#             if bb_counter > 100:
+#                 bb = iter(train_bb_loader).next()
+#                 bb_counter = 0
 
             # Optimize re-tuning
             if model.recalibrator is not None and global_iteration % args.flow_skip == 0:
@@ -197,6 +200,8 @@ for runs in range(args.num_run):
         log_writer.write('\n')
         log_writer.flush()
 
-        if global_iteration % 1000 == 0:
+        if global_iteration % 97 == 0: # Print by modulo a prime number
             print('global_iteration %d, time %.2f, %s' % (global_iteration, time.time() - start_time, args.name))
 
+    log_writer.close()
+    writer.close()
