@@ -40,6 +40,20 @@ class ModelSmall(nn.Module):
             return self.recalibrator.adjust(out)
         return out
 
+class ModelMedium(nn.Module):
+    def __init__(self, x_dim, out_dim=1):
+        super(ModelMedium, self).__init__()
+        self.fc1 = nn.Linear(x_dim, 100)
+        self.fc2 = nn.Linear(100, out_dim)
+        self.recalibrator = None 
+    
+    def forward(self, x):
+        x = F.relu(self.fc1(x))
+        out = self.fc2(x)
+        if not self.training and self.recalibrator is not None:
+            return self.recalibrator.adjust(out)
+        return out
+    
 class ModelBig(nn.Module):
     def __init__(self, x_dim, out_dim=1):
         super(ModelBig, self).__init__()
@@ -73,7 +87,7 @@ class ModelBigg(nn.Module):
             return self.recalibrator.adjust(out)
         return out
     
-model_list = {'linear': ModelLinear, 'small': ModelSmall, 'big': ModelBig, 'bigg': ModelBigg}
+model_list = {'linear': ModelLinear, 'small': ModelSmall, 'medium': ModelMedium, 'big': ModelBig, 'bigg': ModelBigg}
 
 
 class NafFlow(nn.Module):
@@ -137,24 +151,3 @@ class NafFlow(nn.Module):
                 return mid
             else:
                 print("no inverse found")
-
-
-class deeper_flow(nn.Module):
-    def __init__(self, layer_num=5, feature_size=20):
-        super(deeper_flow, self).__init__()
-        self.layer_num = layer_num
-        self.feature_size = feature_size
-
-        self.model = nn.ModuleList([NafFlow(feature_size=feature_size) for i in range(layer_num)])
-
-    def forward(self, x):
-        log_det = 0.
-        for layer in self.model:
-            x, log_det_x = layer(x)
-            log_det = log_det + log_det_x
-        return x, log_det
-
-    def invert(self, y):
-        for layer in reversed(self.model):
-            y = layer.invert(y)
-        return y

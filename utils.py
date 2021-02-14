@@ -16,18 +16,21 @@ import torchvision
 from torchvision import datasets, models, transforms
 import matplotlib.pyplot as plt
 import os, sys, shutil, copy, time, random
-from models import NafFlow, deeper_flow
+from models import NafFlow# , deeper_flow
 
 
 class Recalibrator:
     # This class is untested 
     def __init__(self, model, data, args, re_calib=False, re_bias_f=False, re_bias_y=False, verbose=False):
         self.args = args
+        self.re_calib = re_calib
+        self.re_bias_f = re_bias_f 
+        self.re_bias_y = re_bias_y
         self.model = model  # regression model        
         self.flow = NafFlow(feature_size=40).to(args.device) # This flow model is too simple, might need more layers and latents?
         flow_optim = optim.Adam(self.flow.parameters(), lr=1e-3)
-        flow_scheduler = torch.optim.lr_scheduler.StepLR(flow_optim, step_size=20, gamma=0.9)
-        
+        # flow_scheduler = torch.optim.lr_scheduler.StepLR(flow_optim, step_size=20, gamma=0.9)
+
         k = args.knn
         assert k % 2 == 0
         assert re_calib or re_bias_f or re_bias_y 
@@ -70,7 +73,7 @@ class Recalibrator:
 
             loss_all.backward()
             flow_optim.step()
-            flow_scheduler.step()
+            # flow_scheduler.step()
             if verbose and iteration % 100 == 0:
                 print("Iteration %d, loss_bias=%.5f" % (iteration, loss_bias))
     
