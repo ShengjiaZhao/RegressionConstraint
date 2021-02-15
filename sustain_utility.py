@@ -54,7 +54,7 @@ def compute_utility(model, test_dataset, a=torch.relu, r=torch.log, y_0=0.3):
     # utility = r(2.+after_finacial_aid) # worked well
     utility = r(3.+after_finacial_aid)
     utility = utility.mean(dim=0)
-    return utility
+    return utility, finacial_aid.sum()
 
 def smooth(y, box_pts):
     box = np.ones(box_pts)/box_pts
@@ -111,11 +111,12 @@ if __name__ == '__main__':
                             labels_bias = []
 
                             for y0 in np.linspace(-1.0, 2, utility_points):
-                                u = compute_utility(model, test_dataset, y_0=y0).data.item()
+                                u, a = compute_utility(model, test_dataset, y_0=y0).data.item()
                                 # u = compute_utility(model, test_dataset, a=tax_utility, y_0=y0)  # .data.item()
                                 #     print(u)
                                 u_array_bias.append(u)
-                                labels_bias.append(y0)
+                                labels_bias.append(a)
+#                                 labels_bias.append(y0)
 
                         # plt.plot(labels_bias, u_array_bias, label="%r-%r-%r-%r"%(train_bias_y, train_bias_f, train_cons,
                         #          train_calib))
