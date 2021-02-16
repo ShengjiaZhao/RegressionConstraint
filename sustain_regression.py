@@ -59,12 +59,151 @@ if args.num_bins == 0:
     assert args.knn > 10 and args.knn % 2 == 0
     knn = '_knn'
 
+
+class RecalibratorBias:
+    def __init__(self, model, data, args, axis='label', verbose=False):
+        self.axis = axis
+        #         self.flow = deeper_flow(layer_num=5, feature_size=20).to(args.device)
+        self.flow = NafFlow().to(args.device)  # This flow model is too simple, might need more layers and latents?
+        flow_optim = optim.Adam(self.flow.parameters(), lr=1e-3)
+
+        k = args.knn
+        assert k % 2 == 0
+
+        inputs, labels = data
+        inputs = inputs.to(args.device)
+        labels = labels.to(args.device).flatten()
+
+        for iteration in range(5000):
+            flow_optim.zero_grad()
+            outputs = model(inputs).flatten()
+
+            if axis == 'label':
+                ranking = torch.argsort(labels)
+            else:
+                assert axis == 'prediction'
+                ranking = torch.argsort(outputs)
+
+            sorted_labels = labels[ranking]
+            sorted_outputs = outputs[ranking]
+
+            smoothed_outputs = F.conv1d(sorted_outputs.view(1, 1, -1),
+                                        weight=(1. / (k + 1) * torch.ones(1, 1, k + 1, device=args.device,
+                                                                          requires_grad=False)),
+                                        padding=0).flatten()
+            smoothed_labels = F.conv1d(sorted_labels.view(1, 1, -1),
+                                       weight=(1. / (k + 1) * torch.ones(1, 1, k + 1, device=args.device,
+                                                                         requires_grad=False)),
+                                       padding=0).flatten()
+
+            # Generate some pseudo datapoints
+            #             max_val = smoothed_outputs.max()
+            #             pseudo_outputs_max = max_val + torch.linspace(0, 1, len(inputs) // 10, device=args.device)
+            #             pseudo_labels_max = max_val + torch.linspace(0, 1, len(inputs) // 10, device=args.device)  * \
+            #                 (smoothed_labels[-10:].mean() - smoothed_labels[-20:-10].mean()) / (smoothed_outputs[-10:].mean() - smoothed_outputs[-20:-10].mean())
+
+            #             smoothed_outputs = torch.cat([smoothed_outputs, pseudo_outputs_max])
+            #             smoothed_labels = torch.cat([])
+
+            #             pseudo_outputs = torch.linspace(max_val, )
+            #             print(smoothed_outputs.shape)
+            #             print(smoothed_labels.shape)
+            #             loss_bias = smoothed_labels - smoothed_outputs
+
+            #             if axis == 'label':
+            #                 adjusted_labels, _ = self.flow(smoothed_labels.view(-1, 1))
+            # #                 adjusted_outputs = self.flow.invert(smoothed_outputs.view(-1, 1))
+            #                 loss_bias = (adjusted_labels.view(-1) - smoothed_outputs).pow(2).mean()
+            #             elif axis == 'prediction':
+            adjusted_outputs, _ = self.flow(smoothed_outputs.view(-1, 1))
+            loss_bias = (smoothed_labels - adjusted_outputs.view(-1)).pow(2).mean()
+            loss_bias.backward()
+            flow_optim.step()
+
+            if verbose and iteration % 100 == 0:
+                print("Iteration %d, loss_bias=%.5f" % (iteration, loss_bias))
+
+    def adjust(self, original_y):
+        original_shape = original_y.shape
+        #        if self.axis == 'label':
+        #             adjusted_output = self.flow.invert(original_y.view(-1, 1))
+        #         else:
+        adjusted_output, _ = self.flow(original_y.view(-1, 1))
+        return adjusted_output.view(original_shape)
+
+
+class Recalibrator:
+    # This class is untested
+    def __init__(self, model, data, args, re_calib=False, re_bias_f=False, re_bias_y=False, verbose=False):
+        self.args = args
+        self.re_calib = re_calib
+        self.re_bias_f = re_bias_f
+        self.re_bias_y = re_bias_y
+        self.model = model  # regression model
+        self.flow = NafFlow(feature_size=40).to(
+            args.device)  # This flow model is too simple, might need more layers and latents?
+        flow_optim = optim.Adam(self.flow.parameters(), lr=1e-3)
+        # flow_scheduler = torch.optim.lr_scheduler.StepLR(flow_optim, step_size=100, gamma=0.9)
+
+        k = args.knn
+        assert k % 2 == 0
+        assert re_calib or re_bias_f or re_bias_y
+
+        inputs, labels = data
+        inputs = inputs.to(self.args.device)
+        labels = labels.to(self.args.device).flatten()
+
+        for iteration in range(5000):
+            flow_optim.zero_grad()
+            loss_all = 0.0
+            outputs = model(inputs).flatten()
+
+            for objective in range(2):
+                if objective == 0 and self.re_bias_f:
+                    ranking = torch.argsort(outputs)
+                elif objective == 1 and self.re_bias_y:
+                    ranking = torch.argsort(labels)
+                else:
+                    continue
+                sorted_labels = labels[ranking]
+                sorted_outputs = outputs[ranking]
+
+                smoothed_outputs = F.conv1d(sorted_outputs.view(1, 1, -1),
+                                            weight=(1. / (k + 1) * torch.ones(1, 1, k + 1, device=args.device,
+                                                                              requires_grad=False)),
+                                            padding=k // 2).flatten()
+                smoothed_labels = F.conv1d(sorted_labels.view(1, 1, -1),
+                                           weight=(1. / (k + 1) * torch.ones(1, 1, k + 1, device=args.device,
+                                                                             requires_grad=False)),
+                                           padding=k // 2).flatten()
+                adjusted_outputs, _ = self.flow(smoothed_outputs.view(-1, 1))
+                loss_bias = (smoothed_labels - adjusted_outputs.view(-1)).pow(2).mean()
+                loss_all += loss_bias
+
+            if re_calib:
+                labels = torch.sort(labels.flatten())[0]
+                outputs = torch.sort(outputs.flatten())[0]
+                adjusted_outputs, _ = self.flow(outputs.view(-1, 1))
+                loss_bias = (labels - adjusted_outputs.view(-1)).pow(2).mean()
+                loss_all += loss_bias
+
+            loss_all.backward()
+            flow_optim.step()
+            # flow_scheduler.step()
+            if verbose and iteration % 100 == 0:
+                print("Iteration %d, loss_bias=%.5f" % (iteration, loss_bias))
+
+    def adjust(self, original_y):
+        original_shape = original_y.shape
+        adjusted_output, _ = self.flow(original_y.view(-1, 1))
+        return adjusted_output.view(original_shape)
+
 for runs in range(args.num_run):
     while True:
         # args.name = '%s%s/new_model=%s-%r-%r-%r-%r-bs=%d-run=%d' % \
         #             (args.dataset, knn, args.model, args.train_bias_y, args.train_bias_f, args.train_cons,
         #              args.train_calib, args.batch_size, args.run_label)
-        args.name = '%s%s/model=%s-%r-%r-%r-%r-%r-%r-%r-bs=%d-bin=%d-%d-run=%d' % \
+        args.name = '%s%s/recalibration_model=%s-%r-%r-%r-%r-%r-%r-%r-bs=%d-bin=%d-%d-run=%d' % \
                     (args.dataset, knn, args.model,
                      args.train_bias_y, args.train_bias_f, args.train_cons, args.train_calib, args.re_calib,
                      args.re_bias_f, args.re_bias_y,
@@ -119,11 +258,8 @@ for runs in range(args.num_run):
 
     # train_bb_iter = itertools.cycle(train_bb_loader)
 
-    # bb = iter(train_bb_loader).next()
-    # bb_counter = 0  # Only refresh bb every 100 steps to save computation
-
-    # TODO: update val dataste
-    val_dataset = train_dataset
+    bb = iter(train_bb_loader).next()
+    bb_counter = 0  # Only refresh bb every 100 steps to save computation
 
     for epoch in range(args.num_epoch):
         train_l2_all = []
@@ -138,91 +274,35 @@ for runs in range(args.num_run):
             optimizer.step()
 
             # Minimize any of the special objectives
-            if args.train_bias_y or args.train_bias_f or args.train_calib:
-                optimizer.zero_grad()
+            optimizer.zero_grad()
 
-                if args.train_bias_y:
-                    loss_bias, _ = eval_bias(model, bb, args, axis='label')
-                    writer.add_scalar('bias_loss_y', loss_bias, global_iteration)
-                    loss_bias.backward()
+            if args.train_bias_y:
+                loss_bias, _ = eval_bias(model, bb, args, axis='label')
+                writer.add_scalar('bias_loss_y', loss_bias, global_iteration)
+                loss_bias.backward()
 
-                if args.train_bias_f:
-                    loss_bias, _ = eval_bias(model, bb, args, axis='prediction')
-                    writer.add_scalar('bias_loss_f', loss_bias, global_iteration)
-                    loss_bias.backward()
+            if args.train_bias_f:
+                loss_bias, _ = eval_bias(model, bb, args, axis='prediction')
+                writer.add_scalar('bias_loss_f', loss_bias, global_iteration)
+                loss_bias.backward()
 
-                    # if args.train_cons:
-                #     loss_cons, _ = eval_cons(model, bb, args, alpha=alpha)
-                #     writer.add_scalar('cons_loss', loss_cons, global_iteration)
-                #     loss_cons.backward()
+            if args.train_cons:
+                loss_cons, _ = eval_cons(model, bb, args, alpha=alpha)
+                writer.add_scalar('cons_loss', loss_cons, global_iteration)
+                loss_cons.backward()
 
-                if args.train_calib:
-                    loss_calib, _ = eval_calibration(model, bb, args)
-                    writer.add_scalar('calib_loss', loss_calib, global_iteration)
-                    loss_calib.backward()
+            if args.train_calib:
+                loss_calib, _ = eval_calibration(model, bb, args)
+                writer.add_scalar('calib_loss', loss_calib, global_iteration)
+                loss_calib.backward()
+            optimizer.step()
 
-                optimizer.step()
-            scheduler.step()
             global_iteration += 1
 
-            # Optimize re-tuning
-            if model.recalibrator is not None and global_iteration % args.flow_skip == 0:
-                model.recalibrator.train_step(val_dataset[:])
-
-            # # Minimize any of the special objectives
-            # optimizer.zero_grad()
-            #
-            # if args.train_bias_y:
-            #     loss_bias, _ = eval_bias(model, bb, args)
-            #     writer.add_scalar('bias_loss_y', loss_bias, global_iteration)
-            #     loss_bias.backward()
-            #
-            # if args.train_bias_f:
-            #     loss_bias, _ = eval_bias(model, bb, args, axis='prediction')
-            #     writer.add_scalar('bias_loss_f', loss_bias, global_iteration)
-            #     loss_bias.backward()
-            #
-            # if args.train_cons:
-            #     loss_cons, _ = eval_cons(model, bb, args, alpha=alpha)
-            #     writer.add_scalar('cons_loss', loss_cons, global_iteration)
-            #     loss_cons.backward()
-            #
-            # if args.train_calib:
-            #     loss_calib, _ = eval_calibration(model, bb, args)
-            #     writer.add_scalar('calib_loss', loss_calib, global_iteration)
-            #     loss_calib.backward()
-            # optimizer.step()
-
-            # # Optimize re-tuning
-            # extra_flow_loss = 0.
-            # flow_optimizer.zero_grad()
-            # if args.re_calib:  # model, flow, args
-            #     # model.recalibrator = Recalibrator_flow(model, flow_calib, args)
-            #     model.recalibrator = Recalibrator_flow(model, flow, args)
-            #     loss_ = model.recalibrator.compute_loss(val_dataset[:])  # averaged scalar
-            #     extra_flow_loss = extra_flow_loss + loss_
-            #
-            # if args.re_bias_y:
-            #     # model.recalibrator = RecalibratorBias_flow(model, flow_bias_y, args, axis='label')
-            #     model.recalibrator = RecalibratorBias_flow(model, flow, args, axis='label')
-            #     loss_ = model.recalibrator.compute_loss(val_dataset[:])
-            #     extra_flow_loss = extra_flow_loss + loss_
-            # if args.re_bias_f:
-            #     # model.recalibrator = RecalibratorBias_flow(model, flow_bias_f, args, axis='prediction')
-            #     model.recalibrator = RecalibratorBias_flow(model, flow, args, axis='prediction')
-            #     loss_ = model.recalibrator.compute_loss(val_dataset[:])
-            #     extra_flow_loss = extra_flow_loss + loss_
-            #
-            # if args.re_calib or args.re_bias_y or args.re_bias_f:
-            #     extra_flow_loss.backward()
-            #     flow_optimizer.step()
-            #
-            # global_iteration += 1
-            #
-            # bb_counter += 1
-            # if bb_counter > 100:
-            #     bb = iter(train_bb_loader).next()
-            #     bb_counter = 0
+            bb_counter += 1
+            if bb_counter > 100:
+                bb = iter(train_bb_loader).next()
+                bb_counter = 0
 
         # Performance evaluation
         model.eval()
@@ -239,7 +319,7 @@ for runs in range(args.num_run):
             #             test_bias_err, test_cons_err = make_plot(model, test_dataset[:], args, ('test-%d' % epoch) + '-%s.png',
             #                                                     do_plot=(epoch % 100 == 0), alpha=alpha)
             # train_calib_err, _ = eval_calibration(model, test_dataset[:], args)
-            test_bias_y, _ = eval_bias(model, test_dataset[:], args)
+            test_bias_y, _ = eval_bias(model, test_dataset[:], args, axis='label')
             test_bias_f, _ = eval_bias(model, test_dataset[:], args, axis='prediction')
             test_calib_err, _ = eval_calibration(model, test_dataset[:], args)
 
@@ -259,21 +339,21 @@ for runs in range(args.num_run):
         log_writer.write('\n')
         log_writer.flush()
 
+        print('global_iteration %d, time %.2f, %s' % (global_iteration, time.time() - start_time, args.name))
+        scheduler.step()
+
         if epoch % 100 == 0:
             print('epoch %d, global_iteration %d, time %.2f, %s' % (
             epoch, global_iteration, time.time() - start_time, args.name))
-        scheduler.step()
-        flow_scheduler.step()
 
         states = [
             model.state_dict(),
             train_dataset,
             test_dataset,
+            val_dataset,
             epoch,
-            flow.state_dict(),
         ]
         torch.save(states, os.path.join(args.log_dir, 'ckpt.pth'))
-
 
         model.eval()
         with torch.no_grad():
@@ -290,3 +370,20 @@ for runs in range(args.num_run):
             # plt.plot(np.linspace(0, 1, 1000), np.linspace(0, 1, 1000), linewidth=3, color="orange", alpha=0.7)
             plt.savefig(os.path.join(args.log_dir, "prediction.png"))
             plt.close()
+
+    args.knn = 200
+    recalibrator_bias_f = RecalibratorBias(model, val_dataset[:], args, axis='prediction', verbose=True)
+    recalibrator_bias_y = RecalibratorBias(model, val_dataset[:], args, axis='label', verbose=True)
+    recalibrator_calib = Recalibrator(model, val_dataset[:], args, re_calib=True, verbose=True)
+
+    states = [
+        model.state_dict(),
+        train_dataset,
+        test_dataset,
+        val_dataset,
+        epoch,
+        recalibrator_bias_f.flow.state_dict(),
+        recalibrator_bias_y.flow.state_dict(),
+        recalibrator_calib.flow.state_dict(),
+    ]
+    torch.save(states, os.path.join(args.log_dir, 'ckpt.pth'))
