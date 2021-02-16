@@ -1,0 +1,6 @@
+-r requirements_all.txt
+
+black>=19.10b0
+jupyter>=1.0.0
+sphinx>=2.4.3
+guzzle_sphinx_theme>=0.7.11
