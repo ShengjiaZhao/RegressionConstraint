@@ -62,11 +62,26 @@ def smooth(y, box_pts):
     y_smooth = np.convolve(y, box, mode='valid')
     return y_smooth
 
-def plot_errbar(ax, x, y, c=None, label=None):
+# original
+def plot_errbar_original(ax, x, y, c=None, label=None):
     mean = np.mean(y, axis=1)
     std = np.std(y, axis=1) / np.sqrt(y.shape[1])
     ax.plot(x, mean, label=label, c=c, linewidth=2.)
     ax.fill_between(x, mean-std, mean+std, color=c, alpha=0.01)
+
+from scipy.interpolate import interp1d
+def plot_errbar(ax, x, y, x1=1000, x2=1200, c=None, label=None):
+    # import pdb
+    # pdb.set_trace()
+    for i in range(y.shape[1]):
+        f2 = interp1d(x[:, i], y[:, i], kind='linear')
+        y[:, i] = f2(np.linspace(x1, x2, len(x)))
+
+    mean = np.mean(y, axis=1)
+    std = np.std(y, axis=1) / np.sqrt(y.shape[1])
+    x = np.linspace(x1, x2, len(mean))
+    ax.plot(x, mean, label=label, c=c, linewidth=3.)
+    # ax.fill_between(x, mean-std, mean+std, color=c, alpha=0.01)
 
 if __name__ == '__main__':
     args = parser.parse_args()
@@ -86,6 +101,7 @@ if __name__ == '__main__':
 
                     # test_utility = np.zeros((utility_points + 18, len(run_labels)))
                     test_utility = np.zeros((utility_points, len(run_labels)))
+                    test_labels = np.zeros((utility_points, len(run_labels)))
 
                     labels_bias = None
                     for run_label in run_labels:
@@ -95,7 +111,7 @@ if __name__ == '__main__':
 
                         args.log_dir = os.path.join(args.log_root, args.name)
                         if not os.path.isdir(args.log_dir):
-                            print("dir not exist {}".format(args.name))
+                            # print("dir not exist {}".format(args.name))
                             continue
 
                         ckpt = torch.load(os.path.join(args.log_dir, "ckpt.pth"))
@@ -104,6 +120,7 @@ if __name__ == '__main__':
 
                         # Define model and optimizer
                         model = model_list[args.model](train_dataset.x_dim).to(device)
+                        # model = model_list[args.model](train_dataset.x_dim, act=F.tanh).to(device)
                         model.load_state_dict(ckpt[0])
 
                         # Performance evaluation
@@ -112,8 +129,8 @@ if __name__ == '__main__':
                             labels_bias = []
 
                             for y0 in np.linspace(-1.0, 2, utility_points):
-                                # u, a = compute_utility(model, test_dataset, y_0=y0)
-                                u, a = compute_utility(model, test_dataset, r=(lambda x: torch.pow(x, 1/3.)), y_0=y0)
+                                u, a = compute_utility(model, test_dataset, y_0=y0)
+                                # u, a = compute_utility(model, test_dataset, r=(lambda x: torch.pow(x, 1/2.)), y_0=y0)
                                 # u = compute_utility(model, test_dataset, a=tax_utility, y_0=y0)  # .data.item()
                                 #     print(u)
                                 u_array_bias.append(u)
@@ -123,12 +140,14 @@ if __name__ == '__main__':
                         # plt.plot(labels_bias, u_array_bias, label="%r-%r-%r-%r"%(train_bias_y, train_bias_f, train_cons,
                         #          train_calib))
                         test_utility[:utility_points, run_label] = np.array(u_array_bias) #smooth(np.array(u_array_bias), 18)
-
+                        test_labels[:utility_points, run_label] = np.array(labels_bias)
+                        # ax1.plot(labels_bias, u_array_bias, label='bias_y=%r-bias_f=%r-calib=%r' % (train_bias_y, train_bias_f, train_calib),
+                        #         c=colors[int(k * 8 + i * 4 + j * 2 + t) % 12], linewidth=1.)
                     if isinstance(labels_bias, type(None)):
                         continue
                     print(int(k * 8 + i * 4 + j * 2 + t))
-                    plot_errbar(ax1, labels_bias, test_utility[:utility_points],
-                                label='bias_y=%r-bias_f=%r-cons=%r-calib=%r' % (train_bias_y, train_bias_f, train_cons, train_calib),
+                    plot_errbar(ax1, test_labels[:utility_points], test_utility[:utility_points],
+                                label='bias_y=%r-bias_f=%r-calib=%r' % (train_bias_y, train_bias_f, train_calib),
                                 c=colors[int(k * 8 + i * 4 + j * 2 + t)%12])
 
 
@@ -150,7 +169,8 @@ if __name__ == '__main__':
     plt.savefig('plots/result_{}_knn.png'.format(args.dataset))
     plt.close()
 
-    a = torch.relu
+    # a = torch.relu
+    fig1, ax1 = plt.subplots(nrows=1, ncols=1, figsize=(20, 15))
     palette = plt.cm.get_cmap('Set3').colors
     for i, train_bias_y in enumerate([True, False]):
         for j, train_bias_f in enumerate([True, False]):
@@ -176,17 +196,18 @@ if __name__ == '__main__':
 
                         # Define model and optimizer
                         model = model_list[args.model](train_dataset.x_dim).to(device)
+                        # model = model_list[args.model](train_dataset.x_dim, act=F.tanh).to(device)
                         model.load_state_dict(ckpt[0])
 
                         # Performance evaluation
                         with torch.no_grad():
                             inputs, labels = test_dataset[:]
                             total = inputs.shape[0]
-                            # value = -0.5
-                            # mask = (labels < value).squeeze()  # all the data with gdp labels<-0.5
+                            value = -0.8
+                            mask = (labels < value).squeeze()  # all the data with gdp labels<-0.5
 
-                            value = 0.8 #-0.5
-                            mask = (labels > value).squeeze()  # all the data with gdp labels<-0.5
+                            # value = 0.8 #-0.5
+                            # mask = (labels > value).squeeze()  # all the data with gdp labels<-0.5
 
                             labels = labels[mask].to(device)
                             inputs = inputs[mask].to(device)
@@ -199,12 +220,14 @@ if __name__ == '__main__':
                             labels_bias = []
                             # import pdb
                             # pdb.set_trace()
+                            a = torch.relu
                             for y_0 in np.linspace(-0.1, 0.6, utility_points):
                                 labels_bias.append(y_0)
                                 pred = model(inputs).reshape(-1)
                                 finacial_aid = a(y_0 - pred)
                                 true_aid = a(y_0 - labels)
                                 predicted_.append(finacial_aid.mean().data.item())
+                                # print(finacial_aid.mean().data.item())
                                 true_.append(true_aid.mean().data.item())
 
                         predicted_array[:utility_points, run_label] = np.array(predicted_)  # smooth(np.array(u_array_bias), 18)
@@ -213,11 +236,11 @@ if __name__ == '__main__':
                     if isinstance(labels_bias, type(None)):
                         continue
                     print(int(k * 8 + i * 4 + j * 2 + t))
-                    plot_errbar(ax1, labels_bias, predicted_array[:utility_points],
+                    plot_errbar_original(ax1, labels_bias, predicted_array[:utility_points],
                                 label='bias_y=%r-bias_f=%r-calib=%r' % (
                                 train_bias_y, train_bias_f, train_calib),
                                                                 c=colors[int(k * 8 + i * 4 + j * 2 + t)%12])
-    plot_errbar(ax1, labels_bias, true_array[:utility_points],
+    plot_errbar_original(ax1, labels_bias, true_array[:utility_points],
                 label='true', c="green")
 
     # ax1.set_ylim([0.6, 1.5])
@@ -232,8 +255,8 @@ if __name__ == '__main__':
     ax1.set_xlabel(r"$y_0$", fontsize=fontsize)
     ax1.set_ylabel("Averaged aid", fontsize=fontsize)
 
-    # plt.title("GDP less than {} ({}/{})".format(value, new_total, total), fontsize=fontsize)
-    plt.title("GDP greater than {} ({}/{})".format(value, new_total, total), fontsize=fontsize)
+    plt.title("GDP less than {} ({}/{})".format(value, new_total, total), fontsize=fontsize)
+    # plt.title("GDP greater than {} ({}/{})".format(value, new_total, total), fontsize=fontsize)
     plt.tight_layout()
     plt.xticks(fontsize=20)
     plt.yticks(fontsize=20)

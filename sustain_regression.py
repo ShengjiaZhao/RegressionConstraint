@@ -32,6 +32,7 @@ parser.add_argument('--train_calib', action='store_true')
 parser.add_argument('--re_calib', action='store_true')
 parser.add_argument('--re_bias_f', action='store_true')
 parser.add_argument('--re_bias_y', action='store_true')
+parser.add_argument('--require_val', action='store_true')
 
 # Modeling parameters
 parser.add_argument('--model', type=str, default="bigg")
@@ -90,7 +91,7 @@ for runs in range(args.num_run):
     total_data = Dataset().total_data
     permutation = torch.randperm(total_data)
 
-    if args.re_calib or args.re_bias_y or args.re_bias_f:
+    if args.re_calib or args.re_bias_y or args.re_bias_f or args.require_val:
         train_dataset = Dataset(train=True, val=False, random_permute=False, val_partition=0.2, permutation=permutation)
         val_dataset = Dataset(train=False, val=True, random_permute=False, val_partition=0.2, permutation=permutation)
         test_dataset = Dataset(train=False, val=False, random_permute=False, val_partition=0.2, permutation=permutation)
@@ -110,16 +111,16 @@ for runs in range(args.num_run):
     # flow_bias_y = deeper_flow(layer_num=5, feature_size=20).to(device)
     # flow_bias_f = deeper_flow(layer_num=5, feature_size=20).to(device)
     # flow_calib = deeper_flow(layer_num=5, feature_size=20).to(device)
-    flow = deeper_flow(layer_num=1, feature_size=20).to(device)  # one joint flow
+    # flow = deeper_flow(layer_num=1, feature_size=20).to(device)  # one joint flow
     # flow_optimizer = optim.Adam(itertools.chain(flow_bias_y.parameters(), flow_bias_f.parameters(), flow_calib.parameters()),
     #                             lr=args.learning_rate) # shall we train flows and regression model jointly and share the optimizers?
-    flow_optimizer = optim.Adam(flow.parameters(), lr=args.learning_rate)
-    flow_scheduler = torch.optim.lr_scheduler.StepLR(flow_optimizer, step_size=args.num_epoch // 20, gamma=0.9)
+    # flow_optimizer = optim.Adam(flow.parameters(), lr=args.learning_rate)
+    # flow_scheduler = torch.optim.lr_scheduler.StepLR(flow_optimizer, step_size=args.num_epoch // 20, gamma=0.9)
 
     # train_bb_iter = itertools.cycle(train_bb_loader)
 
-    bb = iter(train_bb_loader).next()
-    bb_counter = 0  # Only refresh bb every 100 steps to save computation
+    # bb = iter(train_bb_loader).next()
+    # bb_counter = 0  # Only refresh bb every 100 steps to save computation
 
     # TODO: update val dataste
     val_dataset = train_dataset
@@ -137,59 +138,91 @@ for runs in range(args.num_run):
             optimizer.step()
 
             # Minimize any of the special objectives
-            optimizer.zero_grad()
+            if args.train_bias_y or args.train_bias_f or args.train_calib:
+                optimizer.zero_grad()
 
-            if args.train_bias_y:
-                loss_bias, _ = eval_bias(model, bb, args)
-                writer.add_scalar('bias_loss_y', loss_bias, global_iteration)
-                loss_bias.backward()
+                if args.train_bias_y:
+                    loss_bias, _ = eval_bias(model, bb, args, axis='label')
+                    writer.add_scalar('bias_loss_y', loss_bias, global_iteration)
+                    loss_bias.backward()
 
-            if args.train_bias_f:
-                loss_bias, _ = eval_bias(model, bb, args, axis='prediction')
-                writer.add_scalar('bias_loss_f', loss_bias, global_iteration)
-                loss_bias.backward()
+                if args.train_bias_f:
+                    loss_bias, _ = eval_bias(model, bb, args, axis='prediction')
+                    writer.add_scalar('bias_loss_f', loss_bias, global_iteration)
+                    loss_bias.backward()
 
-            if args.train_cons:
-                loss_cons, _ = eval_cons(model, bb, args, alpha=alpha)
-                writer.add_scalar('cons_loss', loss_cons, global_iteration)
-                loss_cons.backward()
+                    # if args.train_cons:
+                #     loss_cons, _ = eval_cons(model, bb, args, alpha=alpha)
+                #     writer.add_scalar('cons_loss', loss_cons, global_iteration)
+                #     loss_cons.backward()
 
-            if args.train_calib:
-                loss_calib, _ = eval_calibration(model, bb, args)
-                writer.add_scalar('calib_loss', loss_calib, global_iteration)
-                loss_calib.backward()
-            optimizer.step()
+                if args.train_calib:
+                    loss_calib, _ = eval_calibration(model, bb, args)
+                    writer.add_scalar('calib_loss', loss_calib, global_iteration)
+                    loss_calib.backward()
 
-            # Optimize re-tuning
-            extra_flow_loss = 0.
-            flow_optimizer.zero_grad()
-            if args.re_calib:  # model, flow, args
-                # model.recalibrator = Recalibrator_flow(model, flow_calib, args)
-                model.recalibrator = Recalibrator_flow(model, flow, args)
-                loss_ = model.recalibrator.compute_loss(val_dataset[:])  # averaged scalar
-                extra_flow_loss = extra_flow_loss + loss_
-
-            if args.re_bias_y:
-                # model.recalibrator = RecalibratorBias_flow(model, flow_bias_y, args, axis='label')
-                model.recalibrator = RecalibratorBias_flow(model, flow, args, axis='label')
-                loss_ = model.recalibrator.compute_loss(val_dataset[:])
-                extra_flow_loss = extra_flow_loss + loss_
-            if args.re_bias_f:
-                # model.recalibrator = RecalibratorBias_flow(model, flow_bias_f, args, axis='prediction')
-                model.recalibrator = RecalibratorBias_flow(model, flow, args, axis='prediction')
-                loss_ = model.recalibrator.compute_loss(val_dataset[:])
-                extra_flow_loss = extra_flow_loss + loss_
-
-            if args.re_calib or args.re_bias_y or args.re_bias_f:
-                extra_flow_loss.backward()
-                flow_optimizer.step()
-
+                optimizer.step()
+            scheduler.step()
             global_iteration += 1
 
-            bb_counter += 1
-            if bb_counter > 100:
-                bb = iter(train_bb_loader).next()
-                bb_counter = 0
+            # Optimize re-tuning
+            if model.recalibrator is not None and global_iteration % args.flow_skip == 0:
+                model.recalibrator.train_step(val_dataset[:])
+
+            # # Minimize any of the special objectives
+            # optimizer.zero_grad()
+            #
+            # if args.train_bias_y:
+            #     loss_bias, _ = eval_bias(model, bb, args)
+            #     writer.add_scalar('bias_loss_y', loss_bias, global_iteration)
+            #     loss_bias.backward()
+            #
+            # if args.train_bias_f:
+            #     loss_bias, _ = eval_bias(model, bb, args, axis='prediction')
+            #     writer.add_scalar('bias_loss_f', loss_bias, global_iteration)
+            #     loss_bias.backward()
+            #
+            # if args.train_cons:
+            #     loss_cons, _ = eval_cons(model, bb, args, alpha=alpha)
+            #     writer.add_scalar('cons_loss', loss_cons, global_iteration)
+            #     loss_cons.backward()
+            #
+            # if args.train_calib:
+            #     loss_calib, _ = eval_calibration(model, bb, args)
+            #     writer.add_scalar('calib_loss', loss_calib, global_iteration)
+            #     loss_calib.backward()
+            # optimizer.step()
+
+            # # Optimize re-tuning
+            # extra_flow_loss = 0.
+            # flow_optimizer.zero_grad()
+            # if args.re_calib:  # model, flow, args
+            #     # model.recalibrator = Recalibrator_flow(model, flow_calib, args)
+            #     model.recalibrator = Recalibrator_flow(model, flow, args)
+            #     loss_ = model.recalibrator.compute_loss(val_dataset[:])  # averaged scalar
+            #     extra_flow_loss = extra_flow_loss + loss_
+            #
+            # if args.re_bias_y:
+            #     # model.recalibrator = RecalibratorBias_flow(model, flow_bias_y, args, axis='label')
+            #     model.recalibrator = RecalibratorBias_flow(model, flow, args, axis='label')
+            #     loss_ = model.recalibrator.compute_loss(val_dataset[:])
+            #     extra_flow_loss = extra_flow_loss + loss_
+            # if args.re_bias_f:
+            #     # model.recalibrator = RecalibratorBias_flow(model, flow_bias_f, args, axis='prediction')
+            #     model.recalibrator = RecalibratorBias_flow(model, flow, args, axis='prediction')
+            #     loss_ = model.recalibrator.compute_loss(val_dataset[:])
+            #     extra_flow_loss = extra_flow_loss + loss_
+            #
+            # if args.re_calib or args.re_bias_y or args.re_bias_f:
+            #     extra_flow_loss.backward()
+            #     flow_optimizer.step()
+            #
+            # global_iteration += 1
+            #
+            # bb_counter += 1
+            # if bb_counter > 100:
+            #     bb = iter(train_bb_loader).next()
+            #     bb_counter = 0
 
         # Performance evaluation
         model.eval()
