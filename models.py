@@ -40,6 +40,21 @@ class ModelSmall(nn.Module):
             return self.recalibrator.adjust(out)
         return out
 
+class ModelSDeep(nn.Module):
+    def __init__(self, x_dim, out_dim=1):
+        super(ModelSDeep, self).__init__()
+        self.fc1 = nn.Linear(x_dim, 30)
+        self.fc2 = nn.Linear(30, 30)
+        self.fc3 = nn.Linear(30, out_dim)
+        self.recalibrator = None 
+    
+    def forward(self, x):
+        x = F.leaky_relu(self.fc2(F.leaky_relu(self.fc1(x))))
+        out = self.fc3(x)
+        if not self.training and self.recalibrator is not None:
+            return self.recalibrator.adjust(out)
+        return out
+    
 class ModelMedium(nn.Module):
     def __init__(self, x_dim, out_dim=1):
         super(ModelMedium, self).__init__()
@@ -87,7 +102,7 @@ class ModelBigg(nn.Module):
             return self.recalibrator.adjust(out)
         return out
     
-model_list = {'linear': ModelLinear, 'small': ModelSmall, 'medium': ModelMedium, 'big': ModelBig, 'bigg': ModelBigg}
+model_list = {'linear': ModelLinear, 'small': ModelSmall, 'sdeep': ModelSDeep, 'medium': ModelMedium, 'med': ModelMedium, 'big': ModelBig, 'bigg': ModelBigg}
 
 
 class NafFlow(nn.Module):
