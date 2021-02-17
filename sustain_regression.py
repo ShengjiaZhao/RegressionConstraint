@@ -199,6 +199,7 @@ class Recalibrator:
         return adjusted_output.view(original_shape)
 
 for runs in range(args.num_run):
+    args.knn = 100
     while True:
         # args.name = '%s%s/new_model=%s-%r-%r-%r-%r-bs=%d-run=%d' % \
         #             (args.dataset, knn, args.model, args.train_bias_y, args.train_bias_f, args.train_cons,
