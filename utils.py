@@ -20,7 +20,6 @@ from models import NafFlow# , deeper_flow
 
 
 class Recalibrator:
-    # This class is untested 
     def __init__(self, model, data, args, re_calib=False, re_bias_f=False, re_bias_y=False, verbose=False):
         self.args = args
         self.re_calib = re_calib
