@@ -5,7 +5,7 @@ runner.sh
 sustain_dataset/gdp_data/
 sustain_dataset/*/*.pth
 dataset/data
-
+plots/
 
 
 
